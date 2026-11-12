@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in Offshoot does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. Please check the [open issues](https://github.com/JakobFelixJulius/offshoot/issues) first.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the exact error text from the repository's menu, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a repository that …
+        2. Choose …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: input
+    id: version
+    attributes:
+      label: Offshoot version
+      description: Shown in Finder → Get Info on Offshoot.app.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.2"
+    validations:
+      required: true
+  - type: input
+    id: git
+    attributes:
+      label: git version
+      description: Output of `/usr/bin/git --version`.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "Optional: `log show --last 10m --predicate 'subsystem == \"io.github.jakobfelixjulius.offshoot\"'`. Remove paths you consider private."
+      render: text

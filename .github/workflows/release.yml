@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      SIGNED: ${{ secrets.DEVELOPER_ID_CERT_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: swift test
+
+      - name: Import Developer ID certificate
+        if: env.SIGNED == 'true'
+        env:
+          CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Build universal app
+        env:
+          SIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+        run: scripts/build-app.sh --release
+
+      - name: Notarize
+        if: env.SIGNED == 'true'
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          ZIP="build/Offshoot-$VERSION.zip"
+          xcrun notarytool submit "$ZIP" --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD" --wait
+          xcrun stapler staple build/Offshoot.app
+          rm "$ZIP"
+          ditto -c -k --keepParent build/Offshoot.app "$ZIP"
+          shasum -a 256 "$ZIP" > "$ZIP.sha256"
+
+      - name: Release notes from CHANGELOG
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
+          if [ "$SIGNED" != "true" ]; then
+            printf '\n---\n\nThis build is not notarized yet. See [First launch](https://github.com/%s#first-launch) in the README.\n' \
+              "$GITHUB_REPOSITORY" >> "$RUNNER_TEMP/notes.md"
+          fi
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "build/Offshoot-$VERSION.zip" "build/Offshoot-$VERSION.zip.sha256" \
+            --title "Offshoot $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+
+      - name: Update Homebrew cask
+        run: |
+          SHA="$(cut -d ' ' -f 1 "build/Offshoot-$VERSION.zip.sha256")"
+          git fetch origin main
+          git checkout main
+          sed -i '' -E "s/^  version \".*\"/  version \"$VERSION\"/; s/^  sha256 .*/  sha256 \"$SHA\"/" Casks/offshoot.rb
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: update cask to $VERSION"
+          git push origin main

@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, lint and test
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+
+      - name: Lint
+        run: swift format lint --strict --recursive Sources Tests scripts Package.swift
+
+      - name: Test
+        run: swift test
+
+      - name: Build app bundle
+        run: scripts/build-app.sh --release
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Offshoot-${{ github.sha }}
+          path: build/Offshoot-*.zip
+          retention-days: 7
