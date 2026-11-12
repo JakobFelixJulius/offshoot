@@ -26,8 +26,11 @@ You can also open `Package.swift` in Xcode.
 | `Sources/Offshoot/Snapshot.swift` | Reads branch, upstream, changes and branch lists in one pass |
 | `Sources/Offshoot/Repo.swift` | Per-repository actions: switch, pull, update default branch, sync |
 | `Sources/Offshoot/RepoStore.swift` | Repository list, Fetch All, background fetch, launch at login |
-| `Sources/Offshoot/MenuContent.swift` | The menu bar menu |
-| `Sources/Offshoot/SettingsView.swift` | The Settings window |
+| `Sources/Offshoot/AppDelegate.swift` | Entry point; menu bar app without a Dock icon |
+| `Sources/Offshoot/StatusController.swift` | The menu bar item and its `NSMenu`, updated in place while open |
+| `Sources/Offshoot/MenuItems.swift` | Closure-based menu items and the keep-open Fetch All row |
+| `Sources/Offshoot/RepoPresentation.swift` | Menu titles, status and branch ordering |
+| `Sources/Offshoot/SettingsWindowController.swift`, `SettingsView.swift` | The Settings window and its SwiftUI panes |
 | `Sources/Offshoot/MenuBarIcon.swift`, `StatusIcon.swift` | Menu bar icon and colored status badges |
 | `Tests/OffshootTests` | Integration tests that drive real git against temporary repositories |
 | `scripts/` | App bundle build, icon rendering |

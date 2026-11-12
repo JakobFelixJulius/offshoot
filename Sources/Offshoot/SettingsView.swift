@@ -2,22 +2,7 @@ import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SettingsView: View {
-    let store: RepoStore
-
-    var body: some View {
-        TabView {
-            GeneralSettings(store: store)
-                .tabItem { Label("General", systemImage: "gearshape") }
-            RepositorySettings(store: store)
-                .tabItem { Label("Repositories", systemImage: "folder") }
-        }
-        .frame(width: 500)
-        .onAppear { NSApp.activate() }
-    }
-}
-
-private struct GeneralSettings: View {
+struct GeneralSettings: View {
     @Bindable var store: RepoStore
     @AppStorage(MenuBarIcon.styleKey) private var iconStyle = MenuBarIcon.Style.leaf
 
@@ -67,12 +52,13 @@ private struct GeneralSettings: View {
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
+        .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { store.updateLoginItemStatus() }
     }
 }
 
-private struct RepositorySettings: View {
+struct RepositorySettings: View {
     let store: RepoStore
     @State private var selection = Set<Repo.ID>()
     @State private var isImporting = false
@@ -119,7 +105,7 @@ private struct RepositorySettings: View {
             .padding(.top, 6)
         }
         .padding(20)
-        .frame(height: 360)
+        .frame(width: 500, height: 360)
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.folder], allowsMultipleSelection: true) {
             result in
             guard case .success(let urls) = result else { return }

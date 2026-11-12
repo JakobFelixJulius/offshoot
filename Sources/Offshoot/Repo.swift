@@ -141,8 +141,4 @@ final class Repo: Identifiable {
     private static func isLockContention(_ error: String) -> Bool {
         error.contains(".lock") && (error.contains("File exists") || error.contains("cannot lock ref"))
     }
-
-    private static func commits(_ n: Int) -> String {
-        n == 1 ? "1 commit" : "\(n) commits"
-    }
 }

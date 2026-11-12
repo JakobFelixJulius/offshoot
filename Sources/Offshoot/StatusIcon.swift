@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 /// Colored menu item icons. Menus render SF Symbols as monochrome templates, so the
 /// color is baked into a non-template image: a white glyph on a colored disc,
@@ -8,12 +7,12 @@ import SwiftUI
 enum StatusIcon {
     case upToDate, behind, dirty, diverged, ahead, error, busy, unknown
 
-    var image: Image {
-        Image(nsImage: Self.render(symbol, color))
+    var image: NSImage {
+        Self.render(symbol, color)
     }
 
-    static func action(_ symbol: String, _ color: NSColor) -> Image {
-        Image(nsImage: render(symbol, color))
+    static func action(_ symbol: String, _ color: NSColor) -> NSImage {
+        render(symbol, color)
     }
 
     private var symbol: String {

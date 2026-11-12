@@ -4,6 +4,15 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+
+- Fetch All keeps the menu open, and each repository's status updates live while it fetches.
+- The Settings window uses standard toolbar tabs.
+
+### Fixed
+
+- Long git error messages are shortened in the menu; the full text appears as a tooltip.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added
