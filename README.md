@@ -5,7 +5,8 @@
 <h1 align="center">Offshoot</h1>
 
 <p align="center">
-  Switch branches and pull your everyday git repositories from the macOS menu bar.
+  Switch branches and pull your everyday git repositories from the macOS menu bar.<br>
+  Made for working with AI coding agents across many projects, without an IDE.
 </p>
 
 <p align="center">
@@ -16,6 +17,23 @@
 </p>
 
 Offshoot is a small, native menu bar app for the handful of local checkouts you work in every day. It shows which branch each one is on and whether it is behind, and gets you to the latest code in one or two clicks. It is not a GitHub dashboard: no issues, stars or activity feeds, just your working copies.
+
+## Why Offshoot
+
+Offshoot is built for working with AI coding agents on several projects at once.
+
+When you spend your day in an agent client instead of an IDE, such as the Claude desktop app, Claude Code in a terminal or a similar tool, you lose the small branch indicator an IDE keeps in its status bar. Agents create branches, commit, switch checkouts and spin up worktrees across many repositories, often in parallel and often while you are looking at something else. Before you start the next task, two questions come up again and again:
+
+- **Which branch is this repository's main checkout on right now?** An agent may have left it on a feature branch from an earlier task.
+- **Is it up to date?** Teammates and other agents keep merging, so the default branch you are about to build on is often several commits behind.
+
+Answering that means opening a terminal per repository and running `git status` and `git fetch`. Offshoot answers it from the menu bar for all of your repositories at once:
+
+1. Glance at the menu: every repository shows its current branch, how far it is behind, and whether it has uncommitted changes.
+2. If a checkout was left on an old feature branch, switch it back to the default branch in two clicks.
+3. Click **Fetch All** and watch each repository update, then hand the agent a checkout that is current.
+
+Background fetches only refresh the counts and never move a checkout, so Offshoot is safe to run while agents are working in the same repositories.
 
 ## Features
 
