@@ -105,15 +105,30 @@ final class Repo: Identifiable {
         return moved
     }
 
-    func openInTerminal() {
-        guard let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else {
-            return
+    /// Removes the records of worktrees whose folders no longer exist. Never touches files.
+    func pruneWorktrees() async {
+        await perform("Pruning…", success: "Removed missing worktrees") {
+            await Git.run(["worktree", "prune"], in: self.url)
         }
-        NSWorkspace.shared.open([url], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    func openInTerminal() {
+        Self.openInTerminal(url)
     }
 
     func revealInFinder() {
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        Self.revealInFinder(url)
+    }
+
+    static func openInTerminal(_ folder: URL) {
+        guard let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else {
+            return
+        }
+        NSWorkspace.shared.open([folder], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    static func revealInFinder(_ folder: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([folder])
     }
 
     private func perform(_ label: String, success: String, _ operation: @escaping () async -> GitResult) async {

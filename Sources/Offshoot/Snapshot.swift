@@ -9,6 +9,18 @@ struct LocalBranch: Identifiable, Hashable, Sendable {
     var id: String { name }
 }
 
+struct Worktree: Identifiable, Hashable, Sendable {
+    let path: URL
+    let branch: String?
+    let head: String
+    let isMain: Bool
+    let isLocked: Bool
+    /// The folder is gone; `git worktree prune` removes the stale entry.
+    let isPrunable: Bool
+    var id: URL { path }
+    var name: String { path.lastPathComponent }
+}
+
 /// Everything Offshoot shows about a repo, read in one pass.
 struct RepoSnapshot: Sendable {
     var branch: String?
@@ -21,14 +33,20 @@ struct RepoSnapshot: Sendable {
     var defaultBranch: String?
     var localBranches: [LocalBranch] = []
     var remoteBranches: [String] = []
+    /// All worktrees of the repository, the main checkout first.
+    var worktrees: [Worktree] = []
 
     var isDirty: Bool { changes > 0 }
     var isDiverged: Bool { ahead > 0 && behind > 0 }
     var canFastForward: Bool { behind > 0 && ahead == 0 }
 
-    /// The local default branch, when it isn't the one checked out.
+    /// Branches checked out in other worktrees of this repository, with that worktree.
+    /// git refuses to switch to or update these from here.
+    var branchesInOtherWorktrees: [String: Worktree] = [:]
+
+    /// The local default branch, when it isn't checked out here or in another worktree.
     var otherDefault: LocalBranch? {
-        guard let name = defaultBranch, name != branch else { return nil }
+        guard let name = defaultBranch, name != branch, branchesInOtherWorktrees[name] == nil else { return nil }
         return localBranches.first { $0.name == name }
     }
 
@@ -46,6 +64,7 @@ struct RepoSnapshot: Sendable {
                 "--format=%(refname:short)", "refs/remotes/origin",
             ], in: url)
         async let headRun = Git.run(["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"], in: url)
+        async let worktreeRun = Git.run(["worktree", "list", "--porcelain"], in: url)
 
         let status = await statusRun
         guard status.ok else { return .failure(RepoError(status.message)) }
@@ -93,7 +112,41 @@ struct RepoSnapshot: Sendable {
             let known = localNames.union(snap.remoteBranches)
             snap.defaultBranch = ["main", "master", "dev", "develop"].first { known.contains($0) }
         }
+        snap.worktrees = parseWorktrees((await worktreeRun).output)
+        let here = url.resolvingSymlinksInPath().standardizedFileURL
+        for worktree in snap.worktrees where worktree.path != here {
+            if let branch = worktree.branch { snap.branchesInOtherWorktrees[branch] = worktree }
+        }
         return .success(snap)
+    }
+
+    /// Parses `git worktree list --porcelain`: blank-line separated records of
+    /// `worktree <path>`, `HEAD <sha>`, `branch <ref>` or `detached`, `locked`, `prunable`.
+    static func parseWorktrees(_ output: String) -> [Worktree] {
+        output.components(separatedBy: "\n\n").enumerated().compactMap { index, record in
+            var path: URL?
+            var head = ""
+            var branch: String?
+            var locked = false
+            var prunable = false
+            for line in record.split(separator: "\n") {
+                if line.hasPrefix("worktree ") {
+                    let raw = String(line.dropFirst("worktree ".count))
+                    path = URL(fileURLWithPath: raw).resolvingSymlinksInPath().standardizedFileURL
+                } else if line.hasPrefix("HEAD ") {
+                    head = String(line.dropFirst("HEAD ".count).prefix(7))
+                } else if line.hasPrefix("branch refs/heads/") {
+                    branch = String(line.dropFirst("branch refs/heads/".count))
+                } else if line == "locked" || line.hasPrefix("locked ") {
+                    locked = true
+                } else if line == "prunable" || line.hasPrefix("prunable ") {
+                    prunable = true
+                }
+            }
+            guard let path else { return nil }
+            return Worktree(
+                path: path, branch: branch, head: head, isMain: index == 0, isLocked: locked, isPrunable: prunable)
+        }
     }
 
     private static func parseLocal(_ line: Substring) -> LocalBranch? {

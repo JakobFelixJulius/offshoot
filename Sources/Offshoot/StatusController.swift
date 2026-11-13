@@ -118,6 +118,7 @@ final class StatusController: NSObject, NSMenuDelegate {
         if let snap = repo.snapshot {
             addActions(for: repo, snap, to: menu)
             addBranches(for: repo, snap, to: menu)
+            addWorktrees(for: repo, snap, to: menu)
             menu.addItem(.separator())
         } else if let error = repo.loadError {
             menu.addItem(.note(error))
@@ -153,21 +154,24 @@ final class StatusController: NSObject, NSMenuDelegate {
         let switchTo: (String) -> Void = { name in Task { await repo.switchTo(name) } }
         let ordered = snap.orderedLocalBranches
 
+        let branchItem = { (branch: LocalBranch, isDefault: Bool) -> NSMenuItem in
+            let elsewhere = snap.branchesInOtherWorktrees[branch.name]
+            let title = branch.menuTitle(isDefault: isDefault) + (elsewhere == nil ? "" : " · in worktree")
+            let item = ActionMenuItem(title) { switchTo(branch.name) }
+            item.state = branch.name == snap.branch ? .on : .off
+            if let elsewhere {
+                item.isEnabled = false
+                item.toolTip = "Checked out in \(Self.abbreviated(elsewhere.path))"
+            }
+            return item
+        }
+
         menu.addItem(.sectionHeader(title: "Branches"))
         for branch in ordered.prefix(15) {
-            let item = ActionMenuItem(branch.menuTitle(isDefault: branch.name == snap.defaultBranch)) {
-                switchTo(branch.name)
-            }
-            item.state = branch.name == snap.branch ? .on : .off
-            menu.addItem(item)
+            menu.addItem(branchItem(branch, branch.name == snap.defaultBranch))
         }
         if ordered.count > 15 {
-            menu.addItem(
-                submenu(
-                    "More Branches",
-                    ordered.dropFirst(15).map { branch in
-                        ActionMenuItem(branch.menuTitle(isDefault: false)) { switchTo(branch.name) }
-                    }))
+            menu.addItem(submenu("More Branches", ordered.dropFirst(15).map { branchItem($0, false) }))
         }
         if !snap.remoteBranches.isEmpty {
             menu.addItem(
@@ -177,9 +181,64 @@ final class StatusController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// A Worktrees submenu, shown when the repository has worktrees besides the main checkout.
+    private func addWorktrees(for repo: Repo, _ snap: RepoSnapshot, to menu: NSMenu) {
+        guard snap.worktrees.count > 1 else { return }
+        let here = repo.url.resolvingSymlinksInPath().standardizedFileURL
+        let tracked = Set(store.repos.map { $0.url.resolvingSymlinksInPath().standardizedFileURL })
+
+        var items = snap.worktrees.map { worktree -> NSMenuItem in
+            let item = NSMenuItem(title: Self.title(for: worktree, snap), action: nil, keyEquivalent: "")
+            item.state = worktree.path == here ? .on : .off
+            item.toolTip = Self.abbreviated(worktree.path)
+            if worktree.isPrunable {
+                item.isEnabled = false
+                return item
+            }
+            var actions: [NSMenuItem] = [
+                ActionMenuItem("Open in Terminal") { Repo.openInTerminal(worktree.path) },
+                ActionMenuItem("Reveal in Finder") { Repo.revealInFinder(worktree.path) },
+            ]
+            if !tracked.contains(worktree.path) {
+                actions.append(.separator())
+                actions.append(
+                    ActionMenuItem("Add to Offshoot") { [weak self] in
+                        Task { await self?.store.add([worktree.path]) }
+                    })
+            }
+            let submenu = NSMenu(title: worktree.name)
+            submenu.items = actions
+            item.submenu = submenu
+            return item
+        }
+        if snap.worktrees.contains(where: \.isPrunable) {
+            items.append(.separator())
+            items.append(ActionMenuItem("Remove Missing Worktrees") { Task { await repo.pruneWorktrees() } })
+        }
+        menu.addItem(submenu("Worktrees (\(snap.worktrees.count))", items))
+    }
+
+    private static func title(for worktree: Worktree, _ snap: RepoSnapshot) -> String {
+        var parts = [worktree.isMain ? "\(worktree.name) (main)" : worktree.name]
+        parts.append("· \(Repo.truncated(worktree.branch ?? "detached @ \(worktree.head)"))")
+        if let branch = worktree.branch, let info = snap.localBranches.first(where: { $0.name == branch }) {
+            if info.behind > 0 { parts.append("↓\(info.behind)") }
+            if info.ahead > 0 { parts.append("↑\(info.ahead)") }
+        }
+        if worktree.isLocked { parts.append("· locked") }
+        if worktree.isPrunable { parts.append("· missing") }
+        return parts.joined(separator: " ")
+    }
+
+    private static func abbreviated(_ url: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return url.path.hasPrefix(home) ? "~" + url.path.dropFirst(home.count) : url.path
+    }
+
     private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
         submenu.items = items
         item.submenu = submenu
         return item

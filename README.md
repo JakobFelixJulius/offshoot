@@ -41,6 +41,7 @@ Background fetches only refresh the counts and never move a checkout, so Offshoo
 - **Switch branches**: hover a repository and pick a branch. The default branch is listed first; remote-only branches are one level deeper and get a tracking branch when you pick them.
 - **Pull**: appears when the branch can fast-forward and runs `git pull --ff-only`.
 - **Stale default branch**: on a feature branch, Offshoot shows when `main` (or `dev`) is behind and fast-forwards it without checking it out.
+- **Worktrees**: see every worktree of a repository with its branch and ahead/behind counts, open one in Terminal or Finder, add it to Offshoot, and clean up worktrees whose folders were deleted. Branches checked out in another worktree are marked, so you know why they can't be switched to.
 - **Fetch All** (⌘F): fetches every repository, then fast-forwards what can move safely.
 - **Background fetch**: keeps the counts current every 5–60 minutes (or never).
 - **Native**: a standard macOS menu with keyboard navigation and VoiceOver support, light and dark mode, launch at login.
@@ -113,7 +114,7 @@ Offshoot runs `/usr/bin/git` with your normal git configuration, SSH keys and cr
 
 **Why not just use a git GUI?** Offshoot is for the moment between tasks: check where every checkout stands and update it, without opening a window.
 
-**Does it work with worktrees?** Add any worktree folder as its own repository.
+**Does it work with worktrees?** Yes. Each repository's menu has a Worktrees submenu, which is handy when agents create worktrees for parallel tasks. To track a worktree's own branch and status, choose **Add to Offshoot** on it.
 
 **Where are settings stored?** In `~/Library/Preferences/io.github.jakobfelixjulius.offshoot.plist`. Offshoot has no network access of its own beyond the git commands it runs.
 

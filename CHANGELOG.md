@@ -4,6 +4,16 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- A Worktrees submenu per repository lists every worktree with its branch and ahead/behind counts, with Open in Terminal, Reveal in Finder and Add to Offshoot for each.
+- Remove Missing Worktrees cleans up records of worktrees whose folders were deleted (`git worktree prune`).
+
+### Fixed
+
+- Branches checked out in another worktree are marked "in worktree" and disabled, since git refuses to switch to them.
+- The default branch is no longer offered for updating when another worktree has it checked out.
+
 ## [0.2.0] - 2026-11-13
 
 ### Changed

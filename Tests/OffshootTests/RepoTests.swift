@@ -108,6 +108,42 @@ struct RepoTests {
         #expect(repo.snapshot?.branch == "main")
     }
 
+    @Test func listsWorktreesAndTheirBranches() async throws {
+        try sh("git worktree add -q -b feature ../wt-feature", in: work)
+        let snap = try await RepoSnapshot.read(at: work).get()
+
+        #expect(snap.worktrees.count == 2)
+        #expect(snap.worktrees.first?.isMain == true)
+        #expect(snap.worktrees.first?.branch == "main")
+        let linked = try #require(snap.worktrees.last)
+        #expect(linked.name == "wt-feature")
+        #expect(linked.branch == "feature")
+        #expect(!linked.isPrunable)
+        #expect(snap.branchesInOtherWorktrees["feature"]?.name == "wt-feature")
+        #expect(snap.branchesInOtherWorktrees["main"] == nil)
+    }
+
+    @Test func defaultBranchInAnotherWorktreeIsNotUpdatedHere() async throws {
+        try sh("git switch -q -c feature && git worktree add -q ../wt-main main", in: work)
+        try push("two")
+        let repo = Repo(url: work)
+        await repo.sync(fastForward: true)
+
+        #expect(repo.snapshot?.otherDefault == nil)
+        #expect(repo.feedback?.kind != .failure)
+    }
+
+    @Test func prunesMissingWorktrees() async throws {
+        try sh("git worktree add -q -b gone ../wt-gone && rm -rf ../wt-gone", in: work)
+        let repo = Repo(url: work)
+        await repo.refresh()
+        #expect(repo.snapshot?.worktrees.last?.isPrunable == true)
+
+        await repo.pruneWorktrees()
+        #expect(repo.snapshot?.worktrees.count == 1)
+        #expect(repo.feedback?.kind == .success)
+    }
+
     // MARK: Helpers
 
     private func push(_ content: String) throws {
