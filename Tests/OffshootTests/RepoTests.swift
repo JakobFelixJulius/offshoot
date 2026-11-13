@@ -147,7 +147,7 @@ struct RepoTests {
         let merged = try #require(repo.snapshot?.mergedWorktrees)
         #expect(Set(merged.map(\.name)) == ["wt-done", "wt-busy"])
 
-        await repo.removeWorktrees(merged)
+        await repo.cleanUpWorktrees()
         #expect(repo.snapshot?.worktrees.map(\.name).contains("wt-done") == false)
         #expect(repo.snapshot?.worktrees.map(\.name).contains("wt-busy") == true)
         #expect(repo.feedback?.kind == .failure)
@@ -156,14 +156,15 @@ struct RepoTests {
         #expect(!FileManager.default.fileExists(atPath: root.appending(path: "wt-done").path))
     }
 
-    @Test func prunesMissingWorktrees() async throws {
+    @Test func cleanUpAlsoClearsMissingWorktrees() async throws {
         try sh("git worktree add -q -b gone ../wt-gone && rm -rf ../wt-gone", in: work)
+        try sh("git worktree add -q -b keep ../wt-keep", in: work)
         let repo = Repo(url: work)
         await repo.refresh()
-        #expect(repo.snapshot?.worktrees.last?.isPrunable == true)
+        #expect(repo.snapshot?.worktrees.first { $0.name == "wt-gone" }?.isPrunable == true)
 
-        await repo.pruneWorktrees()
-        #expect(repo.snapshot?.worktrees.count == 1)
+        await repo.cleanUpWorktrees()
+        #expect(repo.snapshot?.worktrees.map(\.name) == ["work", "wt-keep"])
         #expect(repo.feedback?.kind == .success)
     }
 

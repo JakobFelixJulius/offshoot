@@ -33,32 +33,34 @@ extension NSMenuItem {
     }
 }
 
-/// The Fetch All row. A custom view handles its own click, which is the only way a
-/// menu item can act without closing the menu, so progress stays visible.
-final class FetchAllView: NSView {
+/// A menu row that handles its own click. That is the only way a menu item can act
+/// without closing the menu, so progress stays visible (Fetch All, Clean Up Worktrees).
+final class KeepOpenMenuRow: NSView {
     var onClick: (@MainActor () -> Void)?
 
     private let icon = NSImageView()
     private let spinner = NSProgressIndicator()
-    private let label = NSTextField(labelWithString: "Fetch All")
-    private let shortcut = NSTextField(labelWithString: "⌘F")
-    private var isFetching = false
+    private let label = NSTextField(labelWithString: "")
+    private let shortcut = NSTextField(labelWithString: "")
+    private var isBusy = false
     private var isEnabled = true
+    private var isWarning = false
     private var isHovered = false
 
-    init() {
+    init(title: String, symbol: String, shortcut shortcutText: String? = nil) {
         super.init(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         autoresizingMask = [.width]
         setAccessibilityRole(.menuItem)
-        setAccessibilityLabel("Fetch All")
 
-        icon.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
+        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
         label.font = .menuFont(ofSize: 0)
+        label.lineBreakMode = .byTruncatingTail
         shortcut.font = .menuFont(ofSize: 0)
+        shortcut.stringValue = shortcutText ?? ""
 
         for view in [icon, spinner, label, shortcut] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -78,6 +80,7 @@ final class FetchAllView: NSView {
             shortcut.centerYAnchor.constraint(equalTo: centerYAnchor),
             shortcut.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 24),
         ])
+        update(title: title, isBusy: false, isEnabled: true)
     }
 
     @available(*, unavailable)
@@ -85,26 +88,34 @@ final class FetchAllView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    func update(isFetching: Bool, isEnabled: Bool) {
-        guard isFetching != self.isFetching || isEnabled != self.isEnabled else { return }
-        self.isFetching = isFetching
+    /// `isWarning` shows the row in red, used while it waits for a confirming second click.
+    func update(title: String, isBusy: Bool, isEnabled: Bool, isWarning: Bool = false) {
+        guard
+            title != label.stringValue || isBusy != self.isBusy || isEnabled != self.isEnabled
+                || isWarning != self.isWarning
+        else { return }
+        label.stringValue = title
+        self.isBusy = isBusy
         self.isEnabled = isEnabled
-        label.stringValue = isFetching ? "Fetching…" : "Fetch All"
-        icon.isHidden = isFetching
-        if isFetching { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
-        setAccessibilityEnabled(isEnabled && !isFetching)
+        self.isWarning = isWarning
+        icon.isHidden = isBusy
+        if isBusy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+        setAccessibilityLabel(title)
+        setAccessibilityEnabled(isEnabled && !isBusy)
+        needsLayout = true
         needsDisplay = true
     }
 
+    private var isActive: Bool { isEnabled && !isBusy }
+
     private var isHighlighted: Bool {
-        isEnabled && !isFetching && (isHovered || enclosingMenuItem?.isHighlighted == true)
+        isActive && (isHovered || enclosingMenuItem?.isHighlighted == true)
     }
 
     override func viewWillDraw() {
         super.viewWillDraw()
-        let active = isEnabled && !isFetching
-        let text: NSColor =
-            isHighlighted ? .selectedMenuItemTextColor : (active ? .labelColor : .disabledControlTextColor)
+        let normal: NSColor = isWarning ? .systemRed : .labelColor
+        let text: NSColor = isHighlighted ? .selectedMenuItemTextColor : (isActive ? normal : .disabledControlTextColor)
         label.textColor = text
         icon.contentTintColor = text
         shortcut.textColor = isHighlighted ? .selectedMenuItemTextColor : .tertiaryLabelColor
@@ -112,7 +123,7 @@ final class FetchAllView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard isHighlighted else { return }
-        NSColor.selectedContentBackgroundColor.setFill()
+        (isWarning ? NSColor.systemRed : NSColor.selectedContentBackgroundColor).setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 5, dy: 0), xRadius: 4, yRadius: 4).fill()
     }
 
@@ -135,12 +146,12 @@ final class FetchAllView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard isEnabled, !isFetching else { return }
+        guard isActive else { return }
         onClick?()
     }
 
     override func accessibilityPerformPress() -> Bool {
-        guard isEnabled, !isFetching else { return false }
+        guard isActive else { return false }
         onClick?()
         return true
     }

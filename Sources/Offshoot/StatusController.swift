@@ -10,12 +10,16 @@ final class StatusController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private let fetchAllItem = NSMenuItem()
-    private let fetchAllView = FetchAllView()
+    private let fetchAllView = KeepOpenMenuRow(
+        title: "Fetch All", symbol: "arrow.triangle.2.circlepath", shortcut: "⌘F")
     private let summaryItem = NSMenuItem()
 
     private var renderedIDs: [Repo.ID]?
     private var repoItems: [Repo.ID: NSMenuItem] = [:]
     private var submenuRepos: [ObjectIdentifier: Repo] = [:]
+    private var openSubmenus: Set<ObjectIdentifier> = []
+    /// Repositories whose Clean Up Worktrees row waits for a confirming second click.
+    private var confirmingCleanup: Set<Repo.ID> = []
 
     init(store: RepoStore, settings: SettingsWindowController) {
         self.store = store
@@ -57,15 +61,17 @@ final class StatusController: NSObject, NSMenuDelegate {
         if ids != renderedIDs { rebuild(ids) }
 
         updateStatusButton()
-        fetchAllView.update(isFetching: store.isSyncingAll, isEnabled: !store.repos.isEmpty)
+        fetchAllView.update(
+            title: store.isSyncingAll ? "Fetching…" : "Fetch All", isBusy: store.isSyncingAll,
+            isEnabled: !store.repos.isEmpty)
         summaryItem.title = store.lastSummary ?? ""
         summaryItem.isHidden = store.lastSummary == nil
 
         for repo in store.repos {
             guard let item = repoItems[repo.id] else { continue }
             item.title = repo.menuTitle
+            // Stays enabled while busy: disabling it would close its open submenu.
             item.image = repo.status.image
-            item.isEnabled = !repo.isBusy
         }
     }
 
@@ -107,10 +113,39 @@ final class StatusController: NSObject, NSMenuDelegate {
     // MARK: Repository submenus
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        observeSubmenu(menu)
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        openSubmenus.insert(ObjectIdentifier(menu))
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        openSubmenus.remove(ObjectIdentifier(menu))
+        if let repo = submenuRepos[ObjectIdentifier(menu)] { confirmingCleanup.remove(repo.id) }
+    }
+
+    /// Builds a repository submenu and rebuilds it whenever that repository changes while
+    /// the submenu is open, so cleanup progress and results appear in place.
+    private func observeSubmenu(_ menu: NSMenu) {
         guard let repo = submenuRepos[ObjectIdentifier(menu)] else { return }
+        let id = repo.id
+        withObservationTracking {
+            build(menu, for: repo)
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, let menu = self.repoItems[id]?.submenu,
+                    self.openSubmenus.contains(ObjectIdentifier(menu))
+                else { return }
+                self.observeSubmenu(menu)
+            }
+        }
+    }
+
+    private func build(_ menu: NSMenu, for repo: Repo) {
         menu.removeAllItems()
 
-        if let feedback = repo.feedback, feedback.kind == .failure {
+        if let feedback = repo.feedback {
             menu.addItem(.note(feedback.text))
             menu.addItem(.separator())
         }
@@ -145,9 +180,56 @@ final class StatusController: NSObject, NSMenuDelegate {
                     image: StatusIcon.action("arrow.down.circle.fill", .systemBlue)
                 ) { Task { await repo.updateDefault() } })
         }
-        if snap.canFastForward || snap.updatableDefault != nil {
+        let cleanup = cleanupItem(for: repo, snap)
+        if let cleanup { menu.addItem(cleanup) }
+        if snap.canFastForward || snap.updatableDefault != nil || cleanup != nil {
             menu.addItem(.separator())
         }
+    }
+
+    /// Clean Up Worktrees removes merged worktrees and prunes missing ones. It confirms
+    /// inline, with a second click within 5 seconds, because a dialog cannot show while the
+    /// menu stays open.
+    private func cleanupItem(for repo: Repo, _ snap: RepoSnapshot) -> NSMenuItem? {
+        let count = snap.mergedWorktrees.count + snap.worktrees.filter(\.isPrunable).count
+        let isRemoving = repo.activity?.hasPrefix("Removing") == true
+        guard count > 0 || isRemoving else { return nil }
+
+        let row = KeepOpenMenuRow(title: "", symbol: "trash")
+        row.toolTip =
+            "Removes worktrees whose branch was deleted on the remote, and records of worktrees whose folder "
+            + "is gone. Folders are deleted with ignored files such as .env or node_modules. Worktrees with "
+            + "uncommitted changes and all branches are kept. Make sure no agent is still working in them."
+        let update = { [weak self, weak row] in
+            guard let self, let row else { return }
+            let confirming = self.confirmingCleanup.contains(repo.id)
+            let noun = count == 1 ? "1 worktree" : "\(count) worktrees"
+            let title =
+                isRemoving
+                ? repo.activity ?? "Removing…"
+                : confirming ? "Click again to remove \(noun)" : "Clean Up Worktrees (\(count))"
+            row.update(title: title, isBusy: isRemoving, isEnabled: !repo.isBusy || isRemoving, isWarning: confirming)
+        }
+        update()
+        // The confirm state updates this row in place, so the hover highlight stays.
+        row.onClick = { [weak self] in
+            guard let self else { return }
+            if self.confirmingCleanup.remove(repo.id) != nil {
+                update()
+                Task { await repo.cleanUpWorktrees() }
+                return
+            }
+            self.confirmingCleanup.insert(repo.id)
+            update()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                guard let self, self.confirmingCleanup.remove(repo.id) != nil else { return }
+                update()
+            }
+        }
+        let item = NSMenuItem()
+        item.view = row
+        return item
     }
 
     private func addBranches(for repo: Repo, _ snap: RepoSnapshot, to menu: NSMenu) {
@@ -187,7 +269,7 @@ final class StatusController: NSObject, NSMenuDelegate {
         let here = repo.url.resolvingSymlinksInPath().standardizedFileURL
         let tracked = Set(store.repos.map { $0.url.resolvingSymlinksInPath().standardizedFileURL })
 
-        var items = snap.worktrees.map { worktree -> NSMenuItem in
+        let items = snap.worktrees.map { worktree -> NSMenuItem in
             let item = NSMenuItem(title: Self.title(for: worktree, snap), action: nil, keyEquivalent: "")
             item.state = worktree.path == here ? .on : .off
             item.toolTip = Self.abbreviated(worktree.path)
@@ -211,7 +293,7 @@ final class StatusController: NSObject, NSMenuDelegate {
             if canRemove {
                 actions.append(
                     ActionMenuItem("Remove Worktree…") {
-                        Self.confirmRemoval(of: [worktree], in: repo)
+                        Self.confirmRemoval(of: worktree, in: repo)
                     })
             }
             let submenu = NSMenu(title: worktree.name)
@@ -219,47 +301,26 @@ final class StatusController: NSObject, NSMenuDelegate {
             item.submenu = submenu
             return item
         }
-
-        let merged = snap.mergedWorktrees
-        let hasMissing = snap.worktrees.contains(where: \.isPrunable)
-        if !merged.isEmpty || hasMissing { items.append(.separator()) }
-        if !merged.isEmpty {
-            let cleanup = ActionMenuItem("Clean Up Merged Worktrees (\(merged.count))…") {
-                Self.confirmRemoval(of: merged, in: repo)
-            }
-            cleanup.toolTip = "Removes worktrees whose branch was deleted on the remote"
-            items.append(cleanup)
-        }
-        if hasMissing {
-            items.append(ActionMenuItem("Remove Missing Worktrees") { Task { await repo.pruneWorktrees() } })
-        }
         menu.addItem(submenu("Worktrees (\(snap.worktrees.count))", items))
     }
 
-    /// Asks before deleting worktree folders: ignored files such as `.env` or `node_modules`
-    /// go with them, and an agent may still be working in one.
-    private static func confirmRemoval(of worktrees: [Worktree], in repo: Repo) {
+    /// Asks before deleting a worktree folder: ignored files such as `.env` or `node_modules`
+    /// go with it, and an agent may still be working in it.
+    private static func confirmRemoval(of worktree: Worktree, in repo: Repo) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText =
-            worktrees.count == 1
-            ? "Remove the worktree “\(worktrees[0].name)”?"
-            : "Remove \(worktrees.count) merged worktrees from \(repo.name)?"
-        let list = worktrees.prefix(12).map { "• \($0.name)" }.joined(separator: "\n")
-        let more = worktrees.count > 12 ? "\n• and \(worktrees.count - 12) more" : ""
+        alert.messageText = "Remove the worktree “\(worktree.name)”?"
         alert.informativeText = """
-            \(list)\(more)
-
-            The folders are deleted, including ignored files such as .env or node_modules. \
-            Branches are kept, and git skips any worktree with uncommitted changes. \
-            Make sure no agent is still working in them.
+            The folder is deleted, including ignored files such as .env or node_modules. \
+            The branch is kept, and git refuses if the worktree has uncommitted changes. \
+            Make sure no agent is still working in it.
             """
-        alert.addButton(withTitle: worktrees.count == 1 ? "Remove" : "Remove \(worktrees.count)")
+        alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
         NSApp.activate()
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        Task { await repo.removeWorktrees(worktrees) }
+        Task { await repo.removeWorktrees([worktree]) }
     }
 
     private static func title(for worktree: Worktree, _ snap: RepoSnapshot) -> String {

@@ -105,31 +105,41 @@ final class Repo: Identifiable {
         return moved
     }
 
+    /// Removes merged worktrees and prunes missing ones, as of the latest snapshot.
+    func cleanUpWorktrees() async {
+        guard let snap = snapshot else { return }
+        await removeWorktrees(snap.mergedWorktrees, pruneMissing: snap.worktrees.contains(where: \.isPrunable))
+    }
+
     /// Removes worktrees with `git worktree remove`, never `--force`: git keeps any worktree
     /// with uncommitted or untracked changes, and those are reported as skipped. Branches stay.
-    func removeWorktrees(_ worktrees: [Worktree]) async {
-        guard !isBusy, !worktrees.isEmpty else { return }
-        activity = worktrees.count == 1 ? "Removing worktree…" : "Removing \(worktrees.count) worktrees…"
+    /// `pruneMissing` also drops the records of worktrees whose folders are already gone.
+    func removeWorktrees(_ worktrees: [Worktree], pruneMissing: Bool = false) async {
+        guard !isBusy, !worktrees.isEmpty || pruneMissing else { return }
+        let total = worktrees.count + (pruneMissing ? 1 : 0)
+        activity = "Removing worktrees…"
         var removed = 0
         var skipped: [String] = []
-        for worktree in worktrees {
+        for (index, worktree) in worktrees.enumerated() {
+            activity = "Removing worktree \(index + 1) of \(total)…"
             let result = await Git.run(["worktree", "remove", worktree.path.path], in: url)
             if result.ok { removed += 1 } else { skipped.append(worktree.name) }
         }
+        var pruned = false
+        if pruneMissing {
+            pruned = await Git.run(["worktree", "prune"], in: url).ok
+        }
         await refresh()
         activity = nil
-        let done = removed == 1 ? "Removed 1 worktree" : "Removed \(removed) worktrees"
+
+        var parts: [String] = []
+        if removed > 0 { parts.append(removed == 1 ? "Removed 1 worktree" : "Removed \(removed) worktrees") }
+        if pruned { parts.append(parts.isEmpty ? "Cleared missing worktrees" : "cleared missing ones") }
+        let done = parts.isEmpty ? "No worktrees removed" : parts.joined(separator: ", ")
         if skipped.isEmpty {
             show(.success, done)
         } else {
             show(.failure, "\(done). Kept \(skipped.joined(separator: ", ")): uncommitted changes")
-        }
-    }
-
-    /// Removes the records of worktrees whose folders no longer exist. Never touches files.
-    func pruneWorktrees() async {
-        await perform("Pruning…", success: "Removed missing worktrees") {
-            await Git.run(["worktree", "prune"], in: self.url)
         }
     }
 

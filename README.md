@@ -41,7 +41,8 @@ Background fetches only refresh the counts and never move a checkout, so Offshoo
 - **Switch branches**: hover a repository and pick a branch. The default branch is listed first; remote-only branches are one level deeper and get a tracking branch when you pick them.
 - **Pull**: appears when the branch can fast-forward and runs `git pull --ff-only`.
 - **Stale default branch**: on a feature branch, Offshoot shows when `main` (or `dev`) is behind and fast-forwards it without checking it out.
-- **Worktrees**: see every worktree of a repository with its branch and ahead/behind counts, open one in Terminal or Finder, add it to Offshoot, and clean up worktrees whose folders were deleted. Branches checked out in another worktree are marked, so you know why they can't be switched to.
+- **Worktrees**: see every worktree of a repository with its branch and ahead/behind counts, open one in Terminal or Finder, or add it to Offshoot. Branches checked out in another worktree are marked, so you know why they can't be switched to.
+- **Clean Up Worktrees**: removes the worktrees agents leave behind once their branch is merged and deleted on the remote, plus records of worktrees whose folder is gone. Click it twice to confirm; the menu stays open while it runs. Worktrees with uncommitted changes and all branches are kept.
 - **Fetch All** (⌘F): fetches every repository, then fast-forwards what can move safely.
 - **Background fetch**: keeps the counts current every 5–60 minutes (or never).
 - **Native**: a standard macOS menu with keyboard navigation and VoiceOver support, light and dark mode, launch at login.
