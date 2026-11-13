@@ -4,14 +4,18 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
 ### Changed
 
 - Fetch All keeps the menu open, and each repository's status updates live while it fetches.
 - The Settings window uses standard toolbar tabs.
+- The Homebrew install instructions include `brew trust`, which current Homebrew requires for third-party taps.
 
 ### Fixed
 
 - Long git error messages are shortened in the menu; the full text appears as a tooltip.
+- The Settings window shows the selected tab's name instead of "Untitled".
 
 ## [0.1.0] - 2026-11-12
 
@@ -25,5 +29,6 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 - Settings window: repository list with drag to reorder, launch at login, fetch interval, menu bar icon style.
 - One automatic retry when another git process holds a ref lock.
 
-[Unreleased]: https://github.com/JakobFelixJulius/offshoot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/JakobFelixJulius/offshoot/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/JakobFelixJulius/offshoot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/JakobFelixJulius/offshoot/releases/tag/v0.1.0
