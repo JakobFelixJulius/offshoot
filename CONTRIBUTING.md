@@ -59,6 +59,10 @@ You can also open `Package.swift` in Xcode.
 2. Make your change with tests, run `swift test` and the lint above.
 3. Open a pull request and fill in the template. CI must be green.
 
+## Demo repositories
+
+`scripts/demo-repos.sh` creates five repositories with local remotes in `~/OffshootDemo` (or a folder you pass) that show every state: behind, ahead, uncommitted changes, a stale default branch, worktrees, and branches for each cleanup rule. Use them to try changes by hand and for README screenshots, so no real repository or branch names end up in them. Add them in Settings → Repositories, and delete the folder when you are done.
+
 ## Releasing (maintainers)
 
 1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new version heading and commit.
