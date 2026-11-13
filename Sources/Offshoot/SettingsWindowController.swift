@@ -41,6 +41,8 @@ final class SettingsWindowController {
     private func pane(_ label: String, symbol: String, _ view: some View) -> NSTabViewItem {
         let host = NSHostingController(rootView: view)
         host.sizingOptions = [.preferredContentSize]
+        // The tab view controller shows the selected pane's title as the window title.
+        host.title = label
         let item = NSTabViewItem(viewController: host)
         item.label = label
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
