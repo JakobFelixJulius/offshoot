@@ -1,6 +1,6 @@
 cask "offshoot" do
-  version "0.2.0"
-  sha256 "c42bacf99bb8bf45f583d364d90f3edba11cdc9728197a71d1b697bfb67f30b4"
+  version "0.3.0"
+  sha256 "8d1a33e797e47aec0eb689c2bc7d96d6a72ce5d054b6a2654bc21fcde817a475"
 
   url "https://github.com/JakobFelixJulius/offshoot/releases/download/v#{version}/Offshoot-#{version}.zip"
   name "Offshoot"
