@@ -43,6 +43,7 @@ Background fetches only refresh the counts and never move a checkout, so Offshoo
 - **Stale default branch**: on a feature branch, Offshoot shows when `main` (or `dev`) is behind and fast-forwards it without checking it out.
 - **Worktrees**: see every worktree of a repository with its branch and ahead/behind counts, open one in Terminal or Finder, or add it to Offshoot. Branches checked out in another worktree are marked, so you know why they can't be switched to.
 - **Clean Up Worktrees**: removes the worktrees agents leave behind once their branch is merged and deleted on the remote, plus records of worktrees whose folder is gone. Click it twice to confirm; the menu stays open while it runs. Worktrees with uncommitted changes and all branches are kept.
+- **Delete Merged Branches**: deletes local branches whose remote branch was deleted, which is what happens after a PR is merged, including squash merges that `git branch -d` never recognizes. The default branch and anything checked out in a worktree are kept. Each branch's last commit is written to the system log (Console, search "Offshoot"), so `git branch <name> <sha>` brings one back.
 - **Fetch All** (⌘F): fetches every repository, then fast-forwards what can move safely.
 - **Background fetch**: keeps the counts current every 5–60 minutes (or never).
 - **Native**: a standard macOS menu with keyboard navigation and VoiceOver support, light and dark mode, launch at login.

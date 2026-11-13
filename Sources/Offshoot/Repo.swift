@@ -105,6 +105,31 @@ final class Repo: Identifiable {
         return moved
     }
 
+    /// Deletes local branches whose remote branch is gone (see `RepoSnapshot.staleBranches`).
+    /// Uses `-D` because squash merges leave branches that `-d` never sees as merged; each
+    /// branch's last commit is logged first, so `git branch <name> <sha>` restores it.
+    func deleteMergedBranches() async {
+        guard !isBusy, let stale = snapshot?.staleBranches, !stale.isEmpty else { return }
+        var deleted = 0
+        var kept: [String] = []
+        for (index, branch) in stale.enumerated() {
+            activity = "Deleting branch \(index + 1) of \(stale.count)…"
+            log.notice(
+                "\(self.name, privacy: .public): deleting branch \(branch.name, privacy: .public) at \(branch.sha, privacy: .public)"
+            )
+            let result = await Git.run(["branch", "-D", branch.name], in: url)
+            if result.ok { deleted += 1 } else { kept.append(branch.name) }
+        }
+        await refresh()
+        activity = nil
+        let done = deleted == 1 ? "Deleted 1 branch" : "Deleted \(deleted) branches"
+        if kept.isEmpty {
+            show(.success, done)
+        } else {
+            show(.failure, "\(done). Kept \(kept.joined(separator: ", ")): checked out or changed meanwhile")
+        }
+    }
+
     /// Removes merged worktrees and prunes missing ones, as of the latest snapshot.
     func cleanUpWorktrees() async {
         guard let snap = snapshot else { return }

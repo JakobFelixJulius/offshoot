@@ -168,6 +168,34 @@ struct RepoTests {
         #expect(repo.feedback?.kind == .success)
     }
 
+    @Test func deletesOnlyBranchesWhoseRemoteIsGone() async throws {
+        // merged: pushed, then deleted on the remote (like a squash-merged PR) → deleted
+        // alive: still on the remote; local-only: never pushed → kept
+        // in-worktree: remote gone but checked out in a worktree; current: checked out here → kept
+        for name in ["merged", "alive", "in-worktree", "current"] {
+            try sh(
+                "git switch -q -c \(name) main && echo \(name) > \(name) && git add \(name) "
+                    + "&& git commit -qm \(name) && git push -q -u origin \(name)",
+                in: work)
+        }
+        try sh("git switch -q -c local-only main && git switch -q main", in: work)
+        try sh("git worktree add -q ../wt-in in-worktree && git switch -q current", in: work)
+        for name in ["merged", "in-worktree", "current"] {
+            try sh("git push -q origin --delete \(name)", in: other)
+        }
+        let repo = Repo(url: work)
+        await repo.sync(fastForward: false)
+        #expect(repo.snapshot?.staleBranches.map(\.name) == ["merged"])
+        let sha = try #require(repo.snapshot?.staleBranches.first?.sha)
+
+        await repo.deleteMergedBranches()
+        let remaining = Set(repo.snapshot?.localBranches.map(\.name) ?? [])
+        #expect(remaining == ["main", "alive", "local-only", "in-worktree", "current"])
+        #expect(repo.feedback?.kind == .success)
+        // The logged commit restores the branch.
+        try sh("git branch merged \(sha)", in: work)
+    }
+
     // MARK: Helpers
 
     private func push(_ content: String) throws {

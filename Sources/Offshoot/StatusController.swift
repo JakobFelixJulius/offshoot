@@ -18,8 +18,8 @@ final class StatusController: NSObject, NSMenuDelegate {
     private var repoItems: [Repo.ID: NSMenuItem] = [:]
     private var submenuRepos: [ObjectIdentifier: Repo] = [:]
     private var openSubmenus: Set<ObjectIdentifier> = []
-    /// Repositories whose Clean Up Worktrees row waits for a confirming second click.
-    private var confirmingCleanup: Set<Repo.ID> = []
+    /// Destructive rows ("<repo path>|<action>") waiting for a confirming second click.
+    private var confirmingActions: Set<String> = []
 
     init(store: RepoStore, settings: SettingsWindowController) {
         self.store = store
@@ -122,7 +122,9 @@ final class StatusController: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         openSubmenus.remove(ObjectIdentifier(menu))
-        if let repo = submenuRepos[ObjectIdentifier(menu)] { confirmingCleanup.remove(repo.id) }
+        if let repo = submenuRepos[ObjectIdentifier(menu)] {
+            confirmingActions = confirmingActions.filter { !$0.hasPrefix("\(repo.id.path)|") }
+        }
     }
 
     /// Builds a repository submenu and rebuilds it whenever that repository changes while
@@ -180,50 +182,69 @@ final class StatusController: NSObject, NSMenuDelegate {
                     image: StatusIcon.action("arrow.down.circle.fill", .systemBlue)
                 ) { Task { await repo.updateDefault() } })
         }
-        let cleanup = cleanupItem(for: repo, snap)
-        if let cleanup { menu.addItem(cleanup) }
-        if snap.canFastForward || snap.updatableDefault != nil || cleanup != nil {
+        let worktreeCount = snap.mergedWorktrees.count + snap.worktrees.filter(\.isPrunable).count
+        let cleanups = [
+            confirmRow(
+                for: repo, key: "worktrees", count: worktreeCount, activityPrefix: "Removing",
+                title: "Clean Up Worktrees", noun: ("worktree", "worktrees"), verb: "remove", symbol: "trash",
+                help: "Removes worktrees whose branch was deleted on the remote, and records of worktrees whose "
+                    + "folder is gone. Folders are deleted with ignored files such as .env or node_modules. "
+                    + "Worktrees with uncommitted changes and all branches are kept. Make sure no agent is still "
+                    + "working in them."
+            ) { await repo.cleanUpWorktrees() },
+            confirmRow(
+                for: repo, key: "branches", count: snap.staleBranches.count, activityPrefix: "Deleting",
+                title: "Delete Merged Branches", noun: ("branch", "branches"), verb: "delete",
+                symbol: "arrow.triangle.branch",
+                help: "Deletes local branches whose remote branch was deleted, usually after a merge, including "
+                    + "squash merges. The default branch and branches checked out in any worktree are kept. Each "
+                    + "branch's last commit is written to the system log (search Console for Offshoot), so "
+                    + "`git branch <name> <sha>` restores it."
+            ) { await repo.deleteMergedBranches() },
+        ].compactMap { $0 }
+        cleanups.forEach(menu.addItem)
+        if snap.canFastForward || snap.updatableDefault != nil || !cleanups.isEmpty {
             menu.addItem(.separator())
         }
     }
 
-    /// Clean Up Worktrees removes merged worktrees and prunes missing ones. It confirms
-    /// inline, with a second click within 5 seconds, because a dialog cannot show while the
-    /// menu stays open.
-    private func cleanupItem(for repo: Repo, _ snap: RepoSnapshot) -> NSMenuItem? {
-        let count = snap.mergedWorktrees.count + snap.worktrees.filter(\.isPrunable).count
-        let isRemoving = repo.activity?.hasPrefix("Removing") == true
-        guard count > 0 || isRemoving else { return nil }
+    /// A destructive action that keeps the menu open. It confirms inline, with a second click
+    /// within 5 seconds, because a dialog cannot show while the menu stays open. The confirm
+    /// state updates the row in place, so the hover highlight stays.
+    private func confirmRow(
+        for repo: Repo, key: String, count: Int, activityPrefix: String, title: String,
+        noun: (one: String, many: String), verb: String, symbol: String, help: String,
+        action: @escaping @MainActor () async -> Void
+    ) -> NSMenuItem? {
+        let isRunning = repo.activity?.hasPrefix(activityPrefix) == true
+        guard count > 0 || isRunning else { return nil }
 
-        let row = KeepOpenMenuRow(title: "", symbol: "trash")
-        row.toolTip =
-            "Removes worktrees whose branch was deleted on the remote, and records of worktrees whose folder "
-            + "is gone. Folders are deleted with ignored files such as .env or node_modules. Worktrees with "
-            + "uncommitted changes and all branches are kept. Make sure no agent is still working in them."
+        let confirmKey = "\(repo.id.path)|\(key)"
+        let row = KeepOpenMenuRow(title: "", symbol: symbol)
+        row.toolTip = help
         let update = { [weak self, weak row] in
             guard let self, let row else { return }
-            let confirming = self.confirmingCleanup.contains(repo.id)
-            let noun = count == 1 ? "1 worktree" : "\(count) worktrees"
-            let title =
-                isRemoving
-                ? repo.activity ?? "Removing…"
-                : confirming ? "Click again to remove \(noun)" : "Clean Up Worktrees (\(count))"
-            row.update(title: title, isBusy: isRemoving, isEnabled: !repo.isBusy || isRemoving, isWarning: confirming)
+            let confirming = self.confirmingActions.contains(confirmKey)
+            let what = count == 1 ? "1 \(noun.one)" : "\(count) \(noun.many)"
+            let text =
+                isRunning
+                ? repo.activity ?? "Working…"
+                : confirming ? "Click again to \(verb) \(what)" : "\(title) (\(count))"
+            row.update(title: text, isBusy: isRunning, isEnabled: !repo.isBusy || isRunning, isWarning: confirming)
         }
         update()
-        // The confirm state updates this row in place, so the hover highlight stays.
         row.onClick = { [weak self] in
             guard let self else { return }
-            if self.confirmingCleanup.remove(repo.id) != nil {
+            if self.confirmingActions.remove(confirmKey) != nil {
                 update()
-                Task { await repo.cleanUpWorktrees() }
+                Task { await action() }
                 return
             }
-            self.confirmingCleanup.insert(repo.id)
+            self.confirmingActions.insert(confirmKey)
             update()
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(5))
-                guard let self, self.confirmingCleanup.remove(repo.id) != nil else { return }
+                guard let self, self.confirmingActions.remove(confirmKey) != nil else { return }
                 update()
             }
         }

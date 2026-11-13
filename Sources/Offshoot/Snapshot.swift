@@ -6,6 +6,8 @@ struct LocalBranch: Identifiable, Hashable, Sendable {
     let ahead: Int
     let behind: Int
     let upstreamGone: Bool
+    /// The full commit the branch points at, logged when a branch is deleted so it can be restored.
+    let sha: String
     var id: String { name }
 }
 
@@ -59,6 +61,15 @@ struct RepoSnapshot: Sendable {
         }
     }
 
+    /// Local branches whose remote branch was deleted, usually after a (squash) merge, that are
+    /// not the default branch and not checked out here or in any worktree.
+    var staleBranches: [LocalBranch] {
+        localBranches.filter {
+            $0.upstreamGone && $0.name != defaultBranch && $0.name != branch
+                && branchesInOtherWorktrees[$0.name] == nil
+        }
+    }
+
     /// The local default branch, when it isn't checked out here or in another worktree.
     var otherDefault: LocalBranch? {
         guard let name = defaultBranch, name != branch, branchesInOtherWorktrees[name] == nil else { return nil }
@@ -70,7 +81,7 @@ struct RepoSnapshot: Sendable {
         async let localRun = Git.run(
             [
                 "for-each-ref", "--sort=-committerdate",
-                "--format=%(refname:short)%09%(upstream:short)%09%(upstream:track,nobracket)",
+                "--format=%(refname:short)%09%(upstream:short)%09%(upstream:track,nobracket)%09%(objectname)",
                 "refs/heads",
             ], in: url)
         async let remoteRun = Git.run(
@@ -174,7 +185,8 @@ struct RepoSnapshot: Sendable {
             upstream: upstream,
             ahead: count(of: "ahead", in: track),
             behind: count(of: "behind", in: track),
-            upstreamGone: track == "gone"
+            upstreamGone: track == "gone",
+            sha: fields.count > 3 ? fields[3] : ""
         )
     }
 
