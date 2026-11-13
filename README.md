@@ -46,6 +46,10 @@ Answering that means opening a terminal per repository and running `git status` 
 
 Background fetches only refresh the counts and never move a checkout, so Offshoot is safe to run while agents are working in the same repositories.
 
+### Is it for you?
+
+Offshoot fits if you keep several local checkouts current, work with coding agents or worktrees, or spend your day outside an IDE. It is deliberately not a git client: there is no staging, committing, diffing, merging or conflict resolution, and no issue or pull request browser. For those, keep using Fork, Tower, GitKraken, `lazygit` or your IDE. Offshoot answers one question that none of them put in the menu bar: *where does each of my checkouts stand right now, and can I update it in one click?*
+
 ## Features
 
 - **At a glance**: one menu item per repository with its branch, ↓ behind / ↑ ahead counts, uncommitted changes, and a colored status badge.
@@ -164,7 +168,9 @@ Offshoot runs `/usr/bin/git` with your normal git configuration, SSH keys and cr
 
 ## FAQ
 
-**Why not just use a git GUI?** Offshoot is for the moment between tasks: check where every checkout stands and update it, without opening a window.
+**Why not just use a git GUI?** Offshoot is for the moment between tasks: check where every checkout stands and update it, without opening a window. A git client shows one repository in depth; Offshoot shows all of them at a glance.
+
+**Does it work with GitHub Enterprise, GitLab or Bitbucket?** Yes. Everything except the optional pull request check is plain git, so any remote works. The GitHub CLI option follows whatever host your `gh` is signed in to.
 
 **Does it work with worktrees?** Yes. Each repository's menu has a Worktrees submenu, which is handy when agents create worktrees for parallel tasks. To track a worktree's own branch and status, choose **Add to Offshoot** on it.
 

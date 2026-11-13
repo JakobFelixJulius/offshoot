@@ -35,7 +35,7 @@ You can also open `Package.swift` in Xcode.
 | `Sources/Offshoot/SettingsWindowController.swift`, `SettingsView.swift` | The Settings window and its SwiftUI panes |
 | `Sources/Offshoot/MenuBarIcon.swift`, `StatusIcon.swift` | Menu bar icon and colored status badges |
 | `Tests/OffshootTests` | Integration tests that drive real git against temporary repositories, and cleanup rule tests |
-| `scripts/` | App bundle build, icon rendering |
+| `scripts/` | App bundle build, icon and social card rendering, demo repositories |
 | `Casks/offshoot.rb` | Homebrew cask, updated by the release workflow |
 
 ## Guidelines
