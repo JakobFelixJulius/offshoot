@@ -46,29 +46,8 @@ struct RepoSnapshot: Sendable {
     /// git refuses to switch to or update these from here.
     var branchesInOtherWorktrees: [String: Worktree] = [:]
 
-    /// Whether the branch was deleted on the remote, which usually means it was merged.
-    func isMerged(_ worktree: Worktree) -> Bool {
-        guard let branch = worktree.branch else { return false }
-        return localBranches.first { $0.name == branch }?.upstreamGone == true
-    }
-
-    /// Worktrees that can be cleaned up: their branch is gone upstream, and they are not
-    /// the main checkout, the checkout Offshoot tracks, locked, or already missing.
-    var mergedWorktrees: [Worktree] {
-        let elsewhere = Set(branchesInOtherWorktrees.values.map(\.path))
-        return worktrees.filter {
-            !$0.isMain && elsewhere.contains($0.path) && !$0.isLocked && !$0.isPrunable && isMerged($0)
-        }
-    }
-
-    /// Local branches whose remote branch was deleted, usually after a (squash) merge, that are
-    /// not the default branch and not checked out here or in any worktree.
-    var staleBranches: [LocalBranch] {
-        localBranches.filter {
-            $0.upstreamGone && $0.name != defaultBranch && $0.name != branch
-                && branchesInOtherWorktrees[$0.name] == nil
-        }
-    }
+    /// Local branches whose every commit is in the remote default branch (`git branch --merged`).
+    var mergedIntoDefault: Set<String> = []
 
     /// The local default branch, when it isn't checked out here or in another worktree.
     var otherDefault: LocalBranch? {
@@ -137,6 +116,16 @@ struct RepoSnapshot: Sendable {
         } else {
             let known = localNames.union(snap.remoteBranches)
             snap.defaultBranch = ["main", "master", "dev", "develop"].first { known.contains($0) }
+        }
+        if let base = snap.defaultBranch {
+            let remoteBase = "refs/remotes/origin/\(base)"
+            let hasRemote = await Git.run(["show-ref", "--verify", "--quiet", remoteBase], in: url).ok
+            let merged = await Git.run(
+                [
+                    "for-each-ref", "--merged", hasRemote ? remoteBase : "refs/heads/\(base)",
+                    "--format=%(refname:short)", "refs/heads",
+                ], in: url)
+            snap.mergedIntoDefault = Set(merged.output.split(separator: "\n").map(String.init))
         }
         snap.worktrees = parseWorktrees((await worktreeRun).output)
         let here = url.resolvingSymlinksInPath().standardizedFileURL

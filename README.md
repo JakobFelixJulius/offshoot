@@ -39,18 +39,36 @@ Background fetches only refresh the counts and never move a checkout, so Offshoo
 
 - **At a glance**: one menu item per repository with its branch, ↓ behind / ↑ ahead counts, uncommitted changes, and a colored status badge.
 - **Switch branches**: hover a repository and pick a branch. The default branch is listed first; remote-only branches are one level deeper and get a tracking branch when you pick them.
-- **Pull**: appears when the branch can fast-forward and runs `git pull --ff-only`.
-- **Stale default branch**: on a feature branch, Offshoot shows when `main` (or `dev`) is behind and fast-forwards it without checking it out.
+- **Pull**: appears when the branch can fast-forward; fetches and runs `git merge --ff-only`, so a `pull.rebase` setting never applies.
+- **Stale default branch**: on a feature branch, Offshoot shows when `main` (or `dev`) is behind and fast-forwards it from its own upstream without checking it out.
 - **Worktrees**: see every worktree of a repository with its branch and ahead/behind counts, open one in Terminal or Finder, or add it to Offshoot. Branches checked out in another worktree are marked, so you know why they can't be switched to.
-- **Clean Up Worktrees**: removes the worktrees agents leave behind once their branch is merged and deleted on the remote, plus records of worktrees whose folder is gone. Click it twice to confirm; the menu stays open while it runs. Worktrees with uncommitted changes and all branches are kept.
-- **Delete Merged Branches**: deletes local branches whose remote branch was deleted, which is what happens after a PR is merged, including squash merges that `git branch -d` never recognizes. The default branch and anything checked out in a worktree are kept. Each branch's last commit is written to the system log (Console, search "Offshoot"), so `git branch <name> <sha>` brings one back.
+- **Clean Up Worktrees**: removes the worktrees agents leave behind once their branch is merged, plus records of worktrees whose folder is gone.
+- **Delete Merged Branches**: deletes local branches that are merged (see below), including squash merges that `git branch -d` never recognizes.
 - **Fetch All** (⌘F): fetches every repository, then fast-forwards what can move safely.
 - **Background fetch**: keeps the counts current every 5–60 minutes (or never).
 - **Native**: a standard macOS menu with keyboard navigation and VoiceOver support, light and dark mode, launch at login.
 
 ### Safe by design
 
-Offshoot never discards work. It only fast-forwards (`--ff-only`), never merges, rebases or resets, and skips any branch with uncommitted changes or its own unpushed commits. Background fetches only update remote-tracking refs and never touch your checkouts, so it is safe to run next to an IDE or a coding agent working in the same repository. When git refuses something, Offshoot shows git's own message in that repository's menu.
+Offshoot never discards work. It only fast-forwards (`--ff-only`), never merges, rebases or resets, and skips any branch with uncommitted changes or its own unpushed commits. Background fetches only update remote-tracking refs and never touch your checkouts, so it is safe to run next to an IDE or a coding agent working in the same repository. When git refuses something, Offshoot shows git's own message in that repository's menu. Switching branches warns when uncommitted changes would move along.
+
+### Cleaning up branches and worktrees
+
+Both cleanups keep the menu open. The first click lists exactly what will go and why, right below the row; a second click within 15 seconds runs it.
+
+A branch counts as merged when one of these holds:
+
+1. **Merged into the default branch**: every commit is in `origin/main` (or your default branch), which git can prove. Only for branches that were pushed at some point, so a branch you just created is never touched.
+2. **Pull request merged** (with GitHub CLI, see below): its pull request was merged and holds every commit of the local branch. If the merged commit isn't local, Offshoot fetches it from GitHub's `refs/pull/<number>/head` to check. Branches with commits that never reached the pull request, or whose pull request was closed without merging, are kept.
+3. **Deleted on the remote** (without GitHub CLI): the remote branch was deleted, which usually follows a merge.
+
+Never touched: the default branch, the branch you are on, and anything checked out in a worktree. Right before deleting, Offshoot checks again that each branch still points at the commit it listed, so a branch an agent committed to in the meantime is kept. Worktree folders are removed with `git worktree remove` without `--force`: git keeps any worktree with uncommitted or untracked changes, and ignored files such as `.env` or `node_modules` go with the folder.
+
+Each deleted branch's last commit is written to the system log (Console, search "Offshoot"), so `git branch <name> <sha>` restores it within about two weeks, before git's garbage collection removes unreferenced commits.
+
+### GitHub CLI (optional)
+
+Turn on **Check pull requests with GitHub CLI** in Settings → General to use rule 2 instead of rule 3. It needs the [GitHub CLI](https://cli.github.com) installed and signed in (`gh auth login`), and uses that sign-in. It is off by default; repositories not on GitHub keep using rule 3.
 
 ## Install
 

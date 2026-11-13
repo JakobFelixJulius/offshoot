@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct GeneralSettings: View {
     @Bindable var store: RepoStore
     @AppStorage(MenuBarIcon.styleKey) private var iconStyle = MenuBarIcon.Style.leaf
+    @AppStorage(GitHubCLI.settingKey) private var useGitHubCLI = false
 
     var body: some View {
         Form {
@@ -45,6 +46,20 @@ struct GeneralSettings: View {
             } footer: {
                 Text(
                     "Background fetches only update the ahead and behind counts. Nothing changes in your checkouts until you pull or choose Fetch All."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Check pull requests with GitHub CLI", isOn: $useGitHubCLI)
+                    .disabled(GitHubCLI.executable == nil)
+                    .onChange(of: useGitHubCLI) { Task { await store.refreshAll() } }
+            } footer: {
+                Text(
+                    GitHubCLI.executable == nil
+                        ? "Install the GitHub CLI (gh) and sign in with gh auth login to enable this."
+                        : "Delete Merged Branches then removes a squash-merged branch only if its pull request was merged and the branch still points at the merged commit. Branches whose pull request was closed without merging are kept. Uses your gh sign-in; repositories not on GitHub fall back to the remote-branch rule."
                 )
                 .font(.callout)
                 .foregroundStyle(.secondary)

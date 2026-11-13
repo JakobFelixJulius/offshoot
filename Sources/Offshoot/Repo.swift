@@ -19,12 +19,27 @@ final class Repo: Identifiable {
     var loadError: String?
     var activity: String?
     var feedback: Feedback?
+    /// Pull requests from GitHub CLI; nil when off, unavailable or not loaded yet.
+    private var loadedPullRequests: PullRequestData?
+    private var pullRequestsLoadedAt: Date?
 
     private var feedbackTask: Task<Void, Never>?
 
     nonisolated var id: URL { url }
     var name: String { url.lastPathComponent }
     var isBusy: Bool { activity != nil }
+
+    var pullRequests: PullRequestData? {
+        GitHubCLI.isEnabled ? loadedPullRequests : nil
+    }
+
+    var branchCleanup: [BranchCleanup] {
+        snapshot?.branchCleanup(pullRequests: pullRequests) ?? []
+    }
+
+    var worktreeCleanup: [WorktreeCleanup] {
+        snapshot?.worktreeCleanup(pullRequests: pullRequests) ?? []
+    }
 
     init(url: URL) {
         self.url = url
@@ -38,6 +53,46 @@ final class Repo: Identifiable {
         case .failure(let error):
             loadError = error.message
         }
+        await loadPullRequests(maxAge: 10 * 60)
+    }
+
+    /// Reloads pull requests when GitHub CLI is enabled and the cached list is older than `maxAge`,
+    /// then checks which local branches are contained in their merged pull request.
+    private func loadPullRequests(maxAge: TimeInterval) async {
+        guard GitHubCLI.isEnabled else {
+            loadedPullRequests = nil
+            pullRequestsLoadedAt = nil
+            return
+        }
+        if pullRequestsLoadedAt.map({ Date.now.timeIntervalSince($0) >= maxAge }) ?? true {
+            pullRequestsLoadedAt = .now
+            loadedPullRequests = await GitHubCLI.pullRequests(in: url).map { PullRequestData(byBranch: $0) }
+        }
+        guard var data = loadedPullRequests, let snap = snapshot else { return }
+        data.containedCommits = await containedCommits(of: snap.localBranches, in: data.byBranch)
+        loadedPullRequests = data
+    }
+
+    /// Local branches behind their merged pull request, for example when review fixes were pushed
+    /// to the pull request but never pulled. When the pull request's final commit isn't local,
+    /// it is fetched from GitHub's permanent `refs/pull/<number>/head`; if that fails, the branch
+    /// counts as not contained and is kept.
+    private func containedCommits(
+        of branches: [LocalBranch], in pullRequests: [String: PullRequest]
+    ) async -> Set<String> {
+        var contained: Set<String> = []
+        for branch in branches {
+            guard let pullRequest = pullRequests[branch.name], pullRequest.state == .merged,
+                branch.sha != pullRequest.headRefOid
+            else { continue }
+            let head = pullRequest.headRefOid
+            if !(await Git.run(["cat-file", "-e", "\(head)^{commit}"], in: url).ok) {
+                _ = await Git.run(["fetch", "--quiet", "origin", "refs/pull/\(pullRequest.number)/head"], in: url)
+            }
+            let check = await Git.run(["merge-base", "--is-ancestor", branch.sha, head], in: url)
+            if check.ok { contained.insert(PullRequestData.key(branch)) }
+        }
+        return contained
     }
 
     func switchTo(_ branch: String) async {
@@ -48,16 +103,31 @@ final class Repo: Identifiable {
 
     func pull() async {
         let behind = snapshot?.behind ?? 0
+        // fetch + merge --ff-only rather than pull, so a pull.rebase setting never applies.
         await perform("Pulling…", success: "Pulled \(Self.commits(behind))") {
-            await Git.run(["pull", "--ff-only", "--quiet"], in: self.url)
+            let fetch = await Git.run(["fetch", "--quiet"], in: self.url)
+            guard fetch.ok else { return fetch }
+            return await Git.run(["merge", "--ff-only", "--quiet", "@{u}"], in: self.url)
         }
     }
 
-    /// Fast-forwards the default branch without checking it out.
+    /// Fast-forwards the default branch from its own upstream, without checking it out.
+    /// A refspec without `+` only ever fast-forwards.
     func updateDefault() async {
         guard let target = snapshot?.otherDefault else { return }
         await perform("Updating \(target.name)…", success: "\(target.name) updated") {
-            await Git.run(["fetch", "--quiet", "origin", "\(target.name):\(target.name)"], in: self.url)
+            let upstream = await Git.run(
+                [
+                    "for-each-ref", "--format=%(upstream:remotename)%09%(upstream:remoteref)",
+                    "refs/heads/\(target.name)",
+                ],
+                in: self.url)
+            let parts = upstream.output.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\t")
+            guard parts.count == 2 else {
+                return GitResult(status: 1, output: "", error: "\(target.name) has no upstream branch")
+            }
+            return await Git.run(
+                ["fetch", "--quiet", String(parts[0]), "\(parts[1]):refs/heads/\(target.name)"], in: self.url)
         }
     }
 
@@ -83,6 +153,7 @@ final class Repo: Identifiable {
         }
         if feedback?.kind == .failure { feedback = nil }
         await refresh()
+        await loadPullRequests(maxAge: 0)
         guard fastForward, let snap = snapshot else { return 0 }
 
         var moved = 0
@@ -105,20 +176,27 @@ final class Repo: Identifiable {
         return moved
     }
 
-    /// Deletes local branches whose remote branch is gone (see `RepoSnapshot.staleBranches`).
-    /// Uses `-D` because squash merges leave branches that `-d` never sees as merged; each
-    /// branch's last commit is logged first, so `git branch <name> <sha>` restores it.
+    /// Deletes the branches `branchCleanup` lists. Right before each deletion it checks that the
+    /// branch still points at the previewed commit and, for "merged into" branches, that the commit
+    /// is still in the remote default branch. Squash merges need `-D` because git cannot see them
+    /// as merged; git still refuses branches checked out anywhere. Each branch's last commit is
+    /// logged first, so `git branch <name> <sha>` restores it until git's garbage collection.
     func deleteMergedBranches() async {
-        guard !isBusy, let stale = snapshot?.staleBranches, !stale.isEmpty else { return }
+        let cleanup = branchCleanup
+        guard !isBusy, !cleanup.isEmpty else { return }
         var deleted = 0
         var kept: [String] = []
-        for (index, branch) in stale.enumerated() {
-            activity = "Deleting branch \(index + 1) of \(stale.count)…"
+        for (index, item) in cleanup.enumerated() {
+            activity = "Deleting branch \(index + 1) of \(cleanup.count)…"
+            guard await isUnchanged(item) else {
+                kept.append(item.branch.name)
+                continue
+            }
             log.notice(
-                "\(self.name, privacy: .public): deleting branch \(branch.name, privacy: .public) at \(branch.sha, privacy: .public)"
+                "\(self.name, privacy: .public): deleting branch \(item.branch.name, privacy: .public) at \(item.branch.sha, privacy: .public) (\(item.reason.label, privacy: .public))"
             )
-            let result = await Git.run(["branch", "-D", branch.name], in: url)
-            if result.ok { deleted += 1 } else { kept.append(branch.name) }
+            let result = await Git.run(["branch", "-D", item.branch.name], in: url)
+            if result.ok { deleted += 1 } else { kept.append(item.branch.name) }
         }
         await refresh()
         activity = nil
@@ -126,14 +204,23 @@ final class Repo: Identifiable {
         if kept.isEmpty {
             show(.success, done)
         } else {
-            show(.failure, "\(done). Kept \(kept.joined(separator: ", ")): checked out or changed meanwhile")
+            show(.failure, "\(done). Kept \(kept.joined(separator: ", ")): changed or checked out meanwhile")
         }
     }
 
-    /// Removes merged worktrees and prunes missing ones, as of the latest snapshot.
+    private func isUnchanged(_ item: BranchCleanup) async -> Bool {
+        let current = await Git.run(["rev-parse", "--verify", "--quiet", "refs/heads/\(item.branch.name)"], in: url)
+        guard current.output.trimmingCharacters(in: .whitespacesAndNewlines) == item.branch.sha else { return false }
+        guard case .mergedIntoDefault(let base) = item.reason else { return true }
+        return await Git.run(
+            ["merge-base", "--is-ancestor", item.branch.sha, "refs/remotes/origin/\(base)"], in: url
+        ).ok
+    }
+
+    /// Removes the worktrees `worktreeCleanup` lists and prunes missing ones.
     func cleanUpWorktrees() async {
         guard let snap = snapshot else { return }
-        await removeWorktrees(snap.mergedWorktrees, pruneMissing: snap.worktrees.contains(where: \.isPrunable))
+        await removeWorktrees(worktreeCleanup.map(\.worktree), pruneMissing: !snap.missingWorktrees.isEmpty)
     }
 
     /// Removes worktrees with `git worktree remove`, never `--force`: git keeps any worktree

@@ -20,6 +20,8 @@ final class StatusController: NSObject, NSMenuDelegate {
     private var openSubmenus: Set<ObjectIdentifier> = []
     /// Destructive rows ("<repo path>|<action>") waiting for a confirming second click.
     private var confirmingActions: Set<String> = []
+    /// The preview lines currently shown below an armed confirm row, by the same key.
+    private var previewItems: [String: [NSMenuItem]] = [:]
 
     init(store: RepoStore, settings: SettingsWindowController) {
         self.store = store
@@ -182,24 +184,27 @@ final class StatusController: NSObject, NSMenuDelegate {
                     image: StatusIcon.action("arrow.down.circle.fill", .systemBlue)
                 ) { Task { await repo.updateDefault() } })
         }
-        let worktreeCount = snap.mergedWorktrees.count + snap.worktrees.filter(\.isPrunable).count
+        let worktrees =
+            repo.worktreeCleanup.map { "\($0.worktree.name) · \($0.reason.label)" }
+            + snap.missingWorktrees.map { "\($0.name) · folder missing" }
+        let branches = repo.branchCleanup.map { "\($0.branch.name) · \($0.reason.label)" }
         let cleanups = [
             confirmRow(
-                for: repo, key: "worktrees", count: worktreeCount, activityPrefix: "Removing",
+                for: repo, key: "worktrees", preview: worktrees, activityPrefix: "Removing",
                 title: "Clean Up Worktrees", noun: ("worktree", "worktrees"), verb: "remove", symbol: "trash",
-                help: "Removes worktrees whose branch was deleted on the remote, and records of worktrees whose "
-                    + "folder is gone. Folders are deleted with ignored files such as .env or node_modules. "
-                    + "Worktrees with uncommitted changes and all branches are kept. Make sure no agent is still "
-                    + "working in them."
+                help: "Removes worktrees whose branch is merged, and records of worktrees whose folder is gone. "
+                    + "Folders are deleted with ignored files such as .env or node_modules. Worktrees with "
+                    + "uncommitted changes and all branches are kept. Make sure no agent is still working in them."
             ) { await repo.cleanUpWorktrees() },
             confirmRow(
-                for: repo, key: "branches", count: snap.staleBranches.count, activityPrefix: "Deleting",
+                for: repo, key: "branches", preview: branches, activityPrefix: "Deleting",
                 title: "Delete Merged Branches", noun: ("branch", "branches"), verb: "delete",
                 symbol: "arrow.triangle.branch",
-                help: "Deletes local branches whose remote branch was deleted, usually after a merge, including "
-                    + "squash merges. The default branch and branches checked out in any worktree are kept. Each "
-                    + "branch's last commit is written to the system log (search Console for Offshoot), so "
-                    + "`git branch <name> <sha>` restores it."
+                help: "Deletes local branches that are merged: fully contained in the default branch, merged as "
+                    + "a pull request (with GitHub CLI), or deleted on the remote (without it). The default branch "
+                    + "and branches checked out in any worktree are kept. Each branch's last commit is written to "
+                    + "the system log (search Console for Offshoot), so `git branch <name> <sha>` restores it "
+                    + "within about two weeks."
             ) { await repo.deleteMergedBranches() },
         ].compactMap { $0 }
         cleanups.forEach(menu.addItem)
@@ -208,22 +213,26 @@ final class StatusController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// A destructive action that keeps the menu open. It confirms inline, with a second click
-    /// within 5 seconds, because a dialog cannot show while the menu stays open. The confirm
-    /// state updates the row in place, so the hover highlight stays.
+    /// A destructive action that keeps the menu open. A dialog cannot show while the menu stays
+    /// open, so the first click lists what will happen right below the row and arms it; a second
+    /// click within 15 seconds runs it. The row itself updates in place, so its highlight stays.
     private func confirmRow(
-        for repo: Repo, key: String, count: Int, activityPrefix: String, title: String,
+        for repo: Repo, key: String, preview: [String], activityPrefix: String, title: String,
         noun: (one: String, many: String), verb: String, symbol: String, help: String,
         action: @escaping @MainActor () async -> Void
     ) -> NSMenuItem? {
+        let count = preview.count
         let isRunning = repo.activity?.hasPrefix(activityPrefix) == true
         guard count > 0 || isRunning else { return nil }
 
         let confirmKey = "\(repo.id.path)|\(key)"
+        let item = NSMenuItem()
         let row = KeepOpenMenuRow(title: "", symbol: symbol)
         row.toolTip = help
-        let update = { [weak self, weak row] in
-            guard let self, let row else { return }
+        item.view = row
+
+        let update = { [weak self, weak row, weak item] in
+            guard let self, let row, let item else { return }
             let confirming = self.confirmingActions.contains(confirmKey)
             let what = count == 1 ? "1 \(noun.one)" : "\(count) \(noun.many)"
             let text =
@@ -231,8 +240,8 @@ final class StatusController: NSObject, NSMenuDelegate {
                 ? repo.activity ?? "Working…"
                 : confirming ? "Click again to \(verb) \(what)" : "\(title) (\(count))"
             row.update(title: text, isBusy: isRunning, isEnabled: !repo.isBusy || isRunning, isWarning: confirming)
+            self.showPreview(confirming && !isRunning ? preview : [], for: confirmKey, below: item)
         }
-        update()
         row.onClick = { [weak self] in
             guard let self else { return }
             if self.confirmingActions.remove(confirmKey) != nil {
@@ -243,14 +252,31 @@ final class StatusController: NSObject, NSMenuDelegate {
             self.confirmingActions.insert(confirmKey)
             update()
             Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: .seconds(15))
                 guard let self, self.confirmingActions.remove(confirmKey) != nil else { return }
                 update()
             }
         }
-        let item = NSMenuItem()
-        item.view = row
+        // Applied once the item is in its menu, so the preview lands below it.
+        DispatchQueue.main.async { update() }
+        row.update(title: "\(title) (\(count))", isBusy: isRunning, isEnabled: !repo.isBusy || isRunning)
         return item
+    }
+
+    /// Inserts (or removes, for an empty list) the indented preview lines below a confirm row.
+    private func showPreview(_ lines: [String], for key: String, below item: NSMenuItem) {
+        for old in previewItems[key] ?? [] { old.menu?.removeItem(old) }
+        previewItems[key] = nil
+        guard !lines.isEmpty, let menu = item.menu else { return }
+        let limit = 20
+        var items = lines.prefix(limit).map { NSMenuItem.note($0) }
+        if lines.count > limit { items.append(.note("and \(lines.count - limit) more")) }
+        let start = menu.index(of: item) + 1
+        for (offset, note) in items.enumerated() {
+            note.indentationLevel = 1
+            menu.insertItem(note, at: start + offset)
+        }
+        previewItems[key] = items
     }
 
     private func addBranches(for repo: Repo, _ snap: RepoSnapshot, to menu: NSMenu) {
@@ -270,6 +296,11 @@ final class StatusController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.sectionHeader(title: "Branches"))
+        if snap.isDirty {
+            // git carries changes that don't conflict over to the new branch, which is easy to miss.
+            let changes = snap.changes == 1 ? "1 uncommitted change moves" : "\(snap.changes) uncommitted changes move"
+            menu.addItem(.note("\(changes) with you when switching"))
+        }
         for branch in ordered.prefix(15) {
             menu.addItem(branchItem(branch, branch.name == snap.defaultBranch))
         }
@@ -291,7 +322,8 @@ final class StatusController: NSObject, NSMenuDelegate {
         let tracked = Set(store.repos.map { $0.url.resolvingSymlinksInPath().standardizedFileURL })
 
         let items = snap.worktrees.map { worktree -> NSMenuItem in
-            let item = NSMenuItem(title: Self.title(for: worktree, snap), action: nil, keyEquivalent: "")
+            let item = NSMenuItem(
+                title: Self.title(for: worktree, snap, pullRequests: repo.pullRequests), action: nil, keyEquivalent: "")
             item.state = worktree.path == here ? .on : .off
             item.toolTip = Self.abbreviated(worktree.path)
             if worktree.isPrunable {
@@ -344,14 +376,18 @@ final class StatusController: NSObject, NSMenuDelegate {
         Task { await repo.removeWorktrees([worktree]) }
     }
 
-    private static func title(for worktree: Worktree, _ snap: RepoSnapshot) -> String {
+    private static func title(
+        for worktree: Worktree, _ snap: RepoSnapshot, pullRequests: PullRequestData?
+    ) -> String {
         var parts = [worktree.isMain ? "\(worktree.name) (main)" : worktree.name]
         parts.append("· \(Repo.truncated(worktree.branch ?? "detached @ \(worktree.head)"))")
         if let branch = worktree.branch, let info = snap.localBranches.first(where: { $0.name == branch }) {
             if info.behind > 0 { parts.append("↓\(info.behind)") }
             if info.ahead > 0 { parts.append("↑\(info.ahead)") }
         }
-        if snap.isMerged(worktree) { parts.append("· merged") }
+        if let reason = snap.cleanupReason(for: worktree, pullRequests: pullRequests) {
+            parts.append("· \(reason.label)")
+        }
         if worktree.isLocked { parts.append("· locked") }
         if worktree.isPrunable { parts.append("· missing") }
         return parts.joined(separator: " ")

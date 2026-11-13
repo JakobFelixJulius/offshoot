@@ -144,8 +144,7 @@ struct RepoTests {
         let repo = Repo(url: work)
         await repo.sync(fastForward: false)
 
-        let merged = try #require(repo.snapshot?.mergedWorktrees)
-        #expect(Set(merged.map(\.name)) == ["wt-done", "wt-busy"])
+        #expect(Set(repo.worktreeCleanup.map(\.worktree.name)) == ["wt-done", "wt-busy"])
 
         await repo.cleanUpWorktrees()
         #expect(repo.snapshot?.worktrees.map(\.name).contains("wt-done") == false)
@@ -185,8 +184,9 @@ struct RepoTests {
         }
         let repo = Repo(url: work)
         await repo.sync(fastForward: false)
-        #expect(repo.snapshot?.staleBranches.map(\.name) == ["merged"])
-        let sha = try #require(repo.snapshot?.staleBranches.first?.sha)
+        #expect(repo.branchCleanup.map(\.branch.name) == ["merged"])
+        #expect(repo.branchCleanup.first?.reason == .remoteDeleted)
+        let sha = try #require(repo.branchCleanup.first?.branch.sha)
 
         await repo.deleteMergedBranches()
         let remaining = Set(repo.snapshot?.localBranches.map(\.name) ?? [])
@@ -194,6 +194,41 @@ struct RepoTests {
         #expect(repo.feedback?.kind == .success)
         // The logged commit restores the branch.
         try sh("git branch merged \(sha)", in: work)
+    }
+
+    @Test func deletesFullyMergedBranchesWithSafeFlag() async throws {
+        // feature: merged into main with a merge commit, still on the remote → deleted with -d
+        try sh(
+            "git switch -q -c feature && echo f > f && git add f && git commit -qm f && git push -q -u origin feature "
+                + "&& git switch -q main && git merge -q --no-ff -m merge feature && git push -q origin main",
+            in: work)
+        // fresh: just created from main, never pushed, no commits of its own → kept
+        try sh("git branch fresh main", in: work)
+        let repo = Repo(url: work)
+        await repo.sync(fastForward: false)
+        #expect(repo.branchCleanup.map(\.branch.name) == ["feature"])
+        #expect(repo.branchCleanup.first?.reason == .mergedIntoDefault("main"))
+
+        await repo.deleteMergedBranches()
+        #expect(Set(repo.snapshot?.localBranches.map(\.name) ?? []) == ["main", "fresh"])
+        #expect(repo.snapshot?.remoteBranches.contains("feature") == true)
+    }
+
+    @Test func keepsABranchThatGotNewCommitsAfterThePreview() async throws {
+        try sh("git switch -q -c done && git push -q -u origin done && git switch -q main", in: work)
+        try sh("git push -q origin --delete done", in: other)
+        let repo = Repo(url: work)
+        await repo.sync(fastForward: false)
+        #expect(repo.branchCleanup.map(\.branch.name) == ["done"])
+
+        // An agent commits to the branch between the preview and the second click.
+        try sh(
+            "git switch -q done && echo late > late && git add late && git commit -qm late && git switch -q main",
+            in: work)
+        // The repo still holds the previewed snapshot, as the open menu would.
+        await repo.deleteMergedBranches()
+        #expect(repo.snapshot?.localBranches.map(\.name).contains("done") == true)
+        #expect(repo.feedback?.kind == .failure)
     }
 
     // MARK: Helpers
