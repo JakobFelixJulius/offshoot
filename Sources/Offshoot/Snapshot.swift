@@ -44,6 +44,21 @@ struct RepoSnapshot: Sendable {
     /// git refuses to switch to or update these from here.
     var branchesInOtherWorktrees: [String: Worktree] = [:]
 
+    /// Whether the branch was deleted on the remote, which usually means it was merged.
+    func isMerged(_ worktree: Worktree) -> Bool {
+        guard let branch = worktree.branch else { return false }
+        return localBranches.first { $0.name == branch }?.upstreamGone == true
+    }
+
+    /// Worktrees that can be cleaned up: their branch is gone upstream, and they are not
+    /// the main checkout, the checkout Offshoot tracks, locked, or already missing.
+    var mergedWorktrees: [Worktree] {
+        let elsewhere = Set(branchesInOtherWorktrees.values.map(\.path))
+        return worktrees.filter {
+            !$0.isMain && elsewhere.contains($0.path) && !$0.isLocked && !$0.isPrunable && isMerged($0)
+        }
+    }
+
     /// The local default branch, when it isn't checked out here or in another worktree.
     var otherDefault: LocalBranch? {
         guard let name = defaultBranch, name != branch, branchesInOtherWorktrees[name] == nil else { return nil }

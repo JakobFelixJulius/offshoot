@@ -133,6 +133,29 @@ struct RepoTests {
         #expect(repo.feedback?.kind != .failure)
     }
 
+    @Test func cleansUpMergedWorktreesButKeepsChangesAndBranches() async throws {
+        for name in ["done", "busy"] {
+            try sh(
+                "git worktree add -q -b \(name) ../wt-\(name) && git -C ../wt-\(name) push -q -u origin \(name)",
+                in: work)
+            try sh("git push -q origin --delete \(name)", in: other)
+        }
+        try sh("echo wip > ../wt-busy/file", in: work)
+        let repo = Repo(url: work)
+        await repo.sync(fastForward: false)
+
+        let merged = try #require(repo.snapshot?.mergedWorktrees)
+        #expect(Set(merged.map(\.name)) == ["wt-done", "wt-busy"])
+
+        await repo.removeWorktrees(merged)
+        #expect(repo.snapshot?.worktrees.map(\.name).contains("wt-done") == false)
+        #expect(repo.snapshot?.worktrees.map(\.name).contains("wt-busy") == true)
+        #expect(repo.feedback?.kind == .failure)
+        #expect(repo.feedback?.text.contains("wt-busy") == true)
+        #expect(repo.snapshot?.localBranches.map(\.name).contains("done") == true)
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "wt-done").path))
+    }
+
     @Test func prunesMissingWorktrees() async throws {
         try sh("git worktree add -q -b gone ../wt-gone && rm -rf ../wt-gone", in: work)
         let repo = Repo(url: work)

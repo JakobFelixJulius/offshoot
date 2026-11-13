@@ -199,11 +199,19 @@ final class StatusController: NSObject, NSMenuDelegate {
                 ActionMenuItem("Open in Terminal") { Repo.openInTerminal(worktree.path) },
                 ActionMenuItem("Reveal in Finder") { Repo.revealInFinder(worktree.path) },
             ]
-            if !tracked.contains(worktree.path) {
-                actions.append(.separator())
+            let canAdd = !tracked.contains(worktree.path)
+            let canRemove = !worktree.isMain && worktree.path != here && !worktree.isLocked
+            if canAdd || canRemove { actions.append(.separator()) }
+            if canAdd {
                 actions.append(
                     ActionMenuItem("Add to Offshoot") { [weak self] in
                         Task { await self?.store.add([worktree.path]) }
+                    })
+            }
+            if canRemove {
+                actions.append(
+                    ActionMenuItem("Remove Worktree…") {
+                        Self.confirmRemoval(of: [worktree], in: repo)
                     })
             }
             let submenu = NSMenu(title: worktree.name)
@@ -211,11 +219,47 @@ final class StatusController: NSObject, NSMenuDelegate {
             item.submenu = submenu
             return item
         }
-        if snap.worktrees.contains(where: \.isPrunable) {
-            items.append(.separator())
+
+        let merged = snap.mergedWorktrees
+        let hasMissing = snap.worktrees.contains(where: \.isPrunable)
+        if !merged.isEmpty || hasMissing { items.append(.separator()) }
+        if !merged.isEmpty {
+            let cleanup = ActionMenuItem("Clean Up Merged Worktrees (\(merged.count))…") {
+                Self.confirmRemoval(of: merged, in: repo)
+            }
+            cleanup.toolTip = "Removes worktrees whose branch was deleted on the remote"
+            items.append(cleanup)
+        }
+        if hasMissing {
             items.append(ActionMenuItem("Remove Missing Worktrees") { Task { await repo.pruneWorktrees() } })
         }
         menu.addItem(submenu("Worktrees (\(snap.worktrees.count))", items))
+    }
+
+    /// Asks before deleting worktree folders: ignored files such as `.env` or `node_modules`
+    /// go with them, and an agent may still be working in one.
+    private static func confirmRemoval(of worktrees: [Worktree], in repo: Repo) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText =
+            worktrees.count == 1
+            ? "Remove the worktree “\(worktrees[0].name)”?"
+            : "Remove \(worktrees.count) merged worktrees from \(repo.name)?"
+        let list = worktrees.prefix(12).map { "• \($0.name)" }.joined(separator: "\n")
+        let more = worktrees.count > 12 ? "\n• and \(worktrees.count - 12) more" : ""
+        alert.informativeText = """
+            \(list)\(more)
+
+            The folders are deleted, including ignored files such as .env or node_modules. \
+            Branches are kept, and git skips any worktree with uncommitted changes. \
+            Make sure no agent is still working in them.
+            """
+        alert.addButton(withTitle: worktrees.count == 1 ? "Remove" : "Remove \(worktrees.count)")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { await repo.removeWorktrees(worktrees) }
     }
 
     private static func title(for worktree: Worktree, _ snap: RepoSnapshot) -> String {
@@ -225,6 +269,7 @@ final class StatusController: NSObject, NSMenuDelegate {
             if info.behind > 0 { parts.append("↓\(info.behind)") }
             if info.ahead > 0 { parts.append("↑\(info.ahead)") }
         }
+        if snap.isMerged(worktree) { parts.append("· merged") }
         if worktree.isLocked { parts.append("· locked") }
         if worktree.isPrunable { parts.append("· missing") }
         return parts.joined(separator: " ")

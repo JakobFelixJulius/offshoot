@@ -8,6 +8,8 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 
 - A Worktrees submenu per repository lists every worktree with its branch and ahead/behind counts, with Open in Terminal, Reveal in Finder and Add to Offshoot for each.
 - Remove Missing Worktrees cleans up records of worktrees whose folders were deleted (`git worktree prune`).
+- Clean Up Merged Worktrees removes worktrees whose branch was deleted on the remote, after a confirmation. Worktrees with uncommitted changes are kept and branches stay. Merged worktrees are marked in the list.
+- Remove Worktree… on any worktree other than the main checkout.
 
 ### Fixed
 

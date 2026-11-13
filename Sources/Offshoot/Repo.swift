@@ -105,6 +105,27 @@ final class Repo: Identifiable {
         return moved
     }
 
+    /// Removes worktrees with `git worktree remove`, never `--force`: git keeps any worktree
+    /// with uncommitted or untracked changes, and those are reported as skipped. Branches stay.
+    func removeWorktrees(_ worktrees: [Worktree]) async {
+        guard !isBusy, !worktrees.isEmpty else { return }
+        activity = worktrees.count == 1 ? "Removing worktree…" : "Removing \(worktrees.count) worktrees…"
+        var removed = 0
+        var skipped: [String] = []
+        for worktree in worktrees {
+            let result = await Git.run(["worktree", "remove", worktree.path.path], in: url)
+            if result.ok { removed += 1 } else { skipped.append(worktree.name) }
+        }
+        await refresh()
+        activity = nil
+        let done = removed == 1 ? "Removed 1 worktree" : "Removed \(removed) worktrees"
+        if skipped.isEmpty {
+            show(.success, done)
+        } else {
+            show(.failure, "\(done). Kept \(skipped.joined(separator: ", ")): uncommitted changes")
+        }
+    }
+
     /// Removes the records of worktrees whose folders no longer exist. Never touches files.
     func pruneWorktrees() async {
         await perform("Pruning…", success: "Removed missing worktrees") {
