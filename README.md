@@ -39,8 +39,11 @@ Requires macOS 14 Sonoma or later, on Apple silicon or Intel.
 
 ```bash
 brew tap JakobFelixJulius/offshoot https://github.com/JakobFelixJulius/offshoot
+brew trust JakobFelixJulius/offshoot
 brew install --cask offshoot
 ```
+
+Homebrew asks you to trust third-party taps once; `brew trust` does that for this one.
 
 ### Download
 
