@@ -4,6 +4,8 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Added
 
 - A Worktrees submenu per repository lists every worktree with its branch and ahead/behind counts, with Open in Terminal, Reveal in Finder and Add to Offshoot for each. Merged and missing worktrees are marked.
@@ -49,6 +51,7 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 - Settings window: repository list with drag to reorder, launch at login, fetch interval, menu bar icon style.
 - One automatic retry when another git process holds a ref lock.
 
-[Unreleased]: https://github.com/JakobFelixJulius/offshoot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/JakobFelixJulius/offshoot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/JakobFelixJulius/offshoot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/JakobFelixJulius/offshoot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/JakobFelixJulius/offshoot/releases/tag/v0.1.0
