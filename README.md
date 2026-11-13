@@ -115,7 +115,7 @@ This builds with your local toolchain (Xcode 16 or later), signs ad hoc, copies 
 
 1. Click the Offshoot icon in the menu bar and choose **Settings…** (⌘,).
 2. Under **Repositories**, click **+** and pick one or more git checkouts. Drag to reorder.
-3. Under **General**, turn on **Launch at login** and choose a background fetch interval and menu bar icon.
+3. Under **General**, turn on **Launch at login** and choose a background fetch interval and menu bar icon. If you use the GitHub CLI, turn on **Check pull requests with GitHub CLI** for stricter branch cleanup.
 
 The number next to the menu bar icon is how many repositories have something to pull.
 
@@ -127,6 +127,7 @@ The number next to the menu bar icon is how many repositories have something to 
 | 🟠 ⇅ | Diverged from its upstream; resolve it in your usual git tool |
 | ⚪ ↑ | Only ahead: you have commits to push |
 | 🔴 ! | git reported an error; details at the top of the repository's menu |
+| ⚪ ⟳ | Working: fetching, switching or cleaning up |
 
 Offshoot runs `/usr/bin/git` with your normal git configuration, SSH keys and credential helpers. It never prompts for credentials; a repository that needs them shows an error instead.
 
@@ -136,7 +137,7 @@ Offshoot runs `/usr/bin/git` with your normal git configuration, SSH keys and cr
 
 **Does it work with worktrees?** Yes. Each repository's menu has a Worktrees submenu, which is handy when agents create worktrees for parallel tasks. To track a worktree's own branch and status, choose **Add to Offshoot** on it.
 
-**Where are settings stored?** In `~/Library/Preferences/io.github.jakobfelixjulius.offshoot.plist`. Offshoot has no network access of its own beyond the git commands it runs.
+**Where are settings stored?** In `~/Library/Preferences/io.github.jakobfelixjulius.offshoot.plist`. Offshoot has no network access of its own beyond the git commands it runs, plus `gh pr list` when the GitHub CLI option is on. It collects no analytics.
 
 ## Contributing
 

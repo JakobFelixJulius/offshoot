@@ -10,4 +10,4 @@ Please do not open a public issue. Report it privately through [GitHub's private
 
 ## Scope
 
-Offshoot runs `/usr/bin/git` in folders you add, with your git configuration and credentials. Relevant reports include anything that makes Offshoot run git in a folder you did not add, pass untrusted input to git as options, or lose local work. Behavior of git itself, its hooks or its configuration is out of scope.
+Offshoot runs `/usr/bin/git` in folders you add, with your git configuration and credentials, and, when you turn the option on, the GitHub CLI (`gh pr list`) with your `gh` sign-in. Relevant reports include anything that makes Offshoot run git or gh in a folder you did not add, pass untrusted input such as branch names or pull request data to git as options, delete a branch or worktree that still holds unmerged work, or lose local work otherwise. Behavior of git or gh themselves, git hooks or their configuration is out of scope.

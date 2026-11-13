@@ -22,23 +22,25 @@ You can also open `Package.swift` in Xcode.
 
 | Path | Purpose |
 | --- | --- |
-| `Sources/Offshoot/Git.swift` | Runs git non-interactively with a timeout |
-| `Sources/Offshoot/Snapshot.swift` | Reads branch, upstream, changes and branch lists in one pass |
-| `Sources/Offshoot/Repo.swift` | Per-repository actions: switch, pull, update default branch, sync |
+| `Sources/Offshoot/Git.swift` | Runs git (and other tools) non-interactively with a timeout |
+| `Sources/Offshoot/GitHubCLI.swift` | Optional pull request lookups through `gh` |
+| `Sources/Offshoot/Snapshot.swift` | Reads branch, upstream, changes, branch lists and worktrees in one pass |
+| `Sources/Offshoot/Cleanup.swift` | The rules for which branches and worktrees are merged, as pure functions |
+| `Sources/Offshoot/Repo.swift` | Per-repository actions: switch, pull, update default branch, sync, cleanups |
 | `Sources/Offshoot/RepoStore.swift` | Repository list, Fetch All, background fetch, launch at login |
 | `Sources/Offshoot/AppDelegate.swift` | Entry point; menu bar app without a Dock icon |
 | `Sources/Offshoot/StatusController.swift` | The menu bar item and its `NSMenu`, updated in place while open |
-| `Sources/Offshoot/MenuItems.swift` | Closure-based menu items and the keep-open Fetch All row |
+| `Sources/Offshoot/MenuItems.swift` | Closure-based menu items and the keep-open row (Fetch All, cleanups) |
 | `Sources/Offshoot/RepoPresentation.swift` | Menu titles, status and branch ordering |
 | `Sources/Offshoot/SettingsWindowController.swift`, `SettingsView.swift` | The Settings window and its SwiftUI panes |
 | `Sources/Offshoot/MenuBarIcon.swift`, `StatusIcon.swift` | Menu bar icon and colored status badges |
-| `Tests/OffshootTests` | Integration tests that drive real git against temporary repositories |
+| `Tests/OffshootTests` | Integration tests that drive real git against temporary repositories, and cleanup rule tests |
 | `scripts/` | App bundle build, icon rendering |
 | `Casks/offshoot.rb` | Homebrew cask, updated by the release workflow |
 
 ## Guidelines
 
-- **Safety first.** Offshoot must never lose work: no force operations, no resets, no merges that are not fast-forwards, nothing on a dirty checkout without the user asking. Changes to git behavior need a test in `Tests/OffshootTests`.
+- **Safety first.** Offshoot must never lose work: no resets, no merges that are not fast-forwards, nothing on a dirty checkout without the user asking, and no `--force` on worktrees. The one force operation, `git branch -D` in Delete Merged Branches, is only allowed after the checks in `Cleanup.swift` and the commit re-check in `Repo.deleteMergedBranches`. Destructive actions list what they will do before the confirming click. Changes to git behavior need a test in `Tests/OffshootTests`.
 - **Native first.** Prefer standard AppKit/SwiftUI controls over custom drawing, and keep the menu a real `NSMenu`.
 - **Swift 6 strict concurrency**, no warnings.
 - **Format** with the bundled formatter before committing; CI runs the same lint:
