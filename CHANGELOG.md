@@ -4,6 +4,10 @@ All notable changes to Offshoot are documented here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+
+- The GitHub CLI setting's description matches the actual rule: a pull request must contain every commit of the local branch.
+
 ## [0.3.0] - 2026-11-13
 
 ### Added

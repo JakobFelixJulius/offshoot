@@ -18,6 +18,13 @@
 
 Offshoot is a small, native menu bar app for the handful of local checkouts you work in every day. It shows which branch each one is on and whether it is behind, and gets you to the latest code in one or two clicks. It is not a GitHub dashboard: no issues, stars or activity feeds, just your working copies.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/menu-dark.png">
+    <img src="docs/images/menu-light.png" width="760" alt="The Offshoot menu: five repositories with their branch and sync state, and the web-app submenu with Pull, Clean Up Worktrees, Delete Merged Branches and its branches">
+  </picture>
+</p>
+
 ## Why Offshoot
 
 Offshoot is built for working with AI coding agents on several projects at once.
@@ -32,6 +39,10 @@ Answering that means opening a terminal per repository and running `git status` 
 1. Glance at the menu: every repository shows its current branch, how far it is behind, and whether it has uncommitted changes.
 2. If a checkout was left on an old feature branch, switch it back to the default branch in two clicks.
 3. Click **Fetch All** and watch each repository update, then hand the agent a checkout that is current.
+
+<p align="center">
+  <img src="docs/images/fetch-all.gif" width="560" alt="Clicking Fetch All: the menu stays open while web-app and api are fetched and fast-forwarded, ending with Updated 2 branches">
+</p>
 
 Background fetches only refresh the counts and never move a checkout, so Offshoot is safe to run while agents are working in the same repositories.
 
@@ -48,6 +59,13 @@ Background fetches only refresh the counts and never move a checkout, so Offshoo
 - **Background fetch**: keeps the counts current every 5–60 minutes (or never).
 - **Native**: a standard macOS menu with keyboard navigation and VoiceOver support, light and dark mode, launch at login.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/worktrees-dark.png">
+    <img src="docs/images/worktrees-light.png" width="760" alt="The Worktrees submenu of web-app: the main checkout, a worktree whose branch was deleted on the remote, and an active worktree with Open in Terminal, Reveal in Finder, Add to Offshoot and Remove Worktree">
+  </picture>
+</p>
+
 ### Safe by design
 
 Offshoot never discards work. It only fast-forwards (`--ff-only`), never merges, rebases or resets, and skips any branch with uncommitted changes or its own unpushed commits. Background fetches only update remote-tracking refs and never touch your checkouts, so it is safe to run next to an IDE or a coding agent working in the same repository. When git refuses something, Offshoot shows git's own message in that repository's menu. Switching branches warns when uncommitted changes would move along.
@@ -55,6 +73,13 @@ Offshoot never discards work. It only fast-forwards (`--ff-only`), never merges,
 ### Cleaning up branches and worktrees
 
 Both cleanups keep the menu open. The first click lists exactly what will go and why, right below the row; a second click within 15 seconds runs it.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/cleanup-preview-dark.png">
+    <img src="docs/images/cleanup-preview-light.png" width="760" alt="Delete Merged Branches after the first click: a red row saying Click again to delete 3 branches, with each branch and its reason listed below">
+  </picture>
+</p>
 
 A branch counts as merged when one of these holds:
 
@@ -115,6 +140,12 @@ This builds with your local toolchain (Xcode 16 or later), signs ad hoc, copies 
 
 1. Click the Offshoot icon in the menu bar and choose **Settings…** (⌘,).
 2. Under **Repositories**, click **+** and pick one or more git checkouts. Drag to reorder.
+
+   <picture>
+     <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-repositories-dark.png">
+     <img src="docs/images/settings-repositories-light.png" width="420" alt="Settings, Repositories tab: a list of repositories with their paths, plus and minus buttons, and Drag to reorder">
+   </picture>
+
 3. Under **General**, turn on **Launch at login** and choose a background fetch interval and menu bar icon. If you use the GitHub CLI, turn on **Check pull requests with GitHub CLI** for stricter branch cleanup.
 
 The number next to the menu bar icon is how many repositories have something to pull.

@@ -59,7 +59,7 @@ struct GeneralSettings: View {
                 Text(
                     GitHubCLI.executable == nil
                         ? "Install the GitHub CLI (gh) and sign in with gh auth login to enable this."
-                        : "Delete Merged Branches then removes a squash-merged branch only if its pull request was merged and the branch still points at the merged commit. Branches whose pull request was closed without merging are kept. Uses your gh sign-in; repositories not on GitHub fall back to the remote-branch rule."
+                        : "Delete Merged Branches then removes a squash-merged branch only if its pull request was merged and contains every commit of the local branch. Branches whose pull request was closed without merging, or that have commits the pull request never got, are kept. Uses your gh sign-in; repositories not on GitHub fall back to the remote-branch rule."
                 )
                 .font(.callout)
                 .foregroundStyle(.secondary)
